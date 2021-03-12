@@ -1,0 +1,620 @@
+
+rule simplifyForAbstractSearch {
+	salience: 9;
+	when {
+		ci: cycleInfo ci.searchType === "abstract" && ci.needSimp;
+		e1: TreeExp e1.side === "left";
+		e2: TreeExp e2.side === "right";
+	} then {
+		let simpTree1 = simplifyNoDistribute(e1.tree),
+			simpTree2 = simplifyNoDistribute(e2.tree);
+		
+		equationChanged(e1, simpTree1);
+		equationChanged(e2, simpTree2);
+		modify(ci, "needSimp", false);
+		if (!ci.modified) {
+			modify(ci, "modified", true);
+		}
+	}
+}
+
+rule DistributeMultiplicationOrDivision{
+	salience: 5;
+	when {
+		p: Problem !p.equationChanged;
+		exp: TreeExp {side: s};
+		toDistribute: Object !hasCancelable(exp, toDistribute.plusNode.node) from exp.eqData.distributable;
+		otherExp: TreeExp otherExp !== exp;
+		operand: String from s+toDistribute.toDistribute.toString();
+		ci: cycleInfo ci.selection === "hint" || ci.searchType === "abstract" || nextTransformationIs(ci.reqTransformations, "DistributeMultiplicationOrDivision", operand);
+	} then {
+		var timesNode = toDistribute.term;
+		if (timesNode.factors.length !== 2) {
+			throw new Error("distributeDivision can't (yet) handle > 2 factors");
+		} else {
+			var expStr = exp.tree.toString();
+			var timesNodeStr = timesNode.toString();
+			var distribute = toDistribute.toDistribute;
+			
+			//perform distribution
+			var distributedStr = algApplyRules(timesNodeStr, ["distribute", "flatten"]);
+			var distHintStr = mathUtil.distributeMultiplication(distribute, toDistribute.plusNode.node);
+			
+			//generate new expression string
+			var newExpStr, newFullStr, newExpHintStr;
+			if (toDistribute.parent) {
+				let parentStr = toDistribute.parent.toString();
+				let newStr = parentStr.replace(timesNodeStr, distributedStr);
+				let newHintStr = parentStr.replace(timesNodeStr, distHintStr);
+				newExpStr = expStr.replace(parentStr, newStr);
+				newExpHintStr = expStr.replace(parentStr, newHintStr);
+			} else {
+				//term to distribute is full side of expression
+				newExpStr = distributedStr;
+				newExpHintStr = distHintStr;
+			}
+			let newExp = algParse(newExpStr, true, true);
+			newExpStr = newExp.toString();
+			let otherExpStr = otherExp.tree.toString();
+			
+			//generate hint/input strings
+			newFullStr = newExpStr < otherExpStr ? newExpStr + ' = ' + otherExpStr : otherExpStr + ' = ' + newExpStr;
+			let input = exp.side === "left" ? newExpStr+' = '+otherExpStr : otherExpStr+' = '+newExpStr;
+			let hintInput = exp.side === "left" ? newExpHintStr+' = '+otherExpStr : otherExpStr+' = '+newExpHintStr;
+			var newOpStr = ci.opStr+'t,DistributeMultiplicationOrDivision '+s+distribute.toString()+';';
+			var toMemo = ci.searchType === "abstract" ? sortLikeTransformations(newOpStr) : newFullStr;
+			setCTNodeData(toMemo);
+			let mOrD = toDistribute.operation === "dist-times" ? "m" : "d";
+			if (ci.searchType === "abstract" || ci.selection === "hint") {
+				let skill = mOrD === "m" ? "distribute-multiplication" : "distribute-division";
+				assert(new Skill(skill, "simplification"));
+			}
+			
+			if(ci.selection === "hint") {
+				if (!p.forceSimplify || !ci.canSimplify) {
+					setChainPriority(1);
+					let pNode = toDistribute.plusNode.node,
+						other = timesNode.factors.filter((f)=>f !== pNode)[0];
+					other = mOrD === "m" ? other : algSimplify(other+"^-1");
+					assert(new Hint("You can simplify the "+s+" side by distributing the "+(mOrD === "m" ? "multiplication" : "division")));
+					assert(new Hint((mOrD === "m" ? "Multiply" : "Divide")+" each of the terms in the expression "+pNode+" by "+other));
+					if (p.dragNDrop) {
+						assert(new Hint("Drag "+eqStr(factorExpr2.terms)+" over "+eqStr(factorExpr1.terms)));
+					} else {
+						assert(new Hint("Enter "+hintInput));
+					}
+				}
+				backtrack();
+			}else if (inputRepeated(toMemo, 'full-'+ci.searchType)) {
+				backtrack();
+			} else{
+				recordInput(toMemo, 'full-'+ci.searchType);
+				let ciMods = {"modified": true, "opStr": newOpStr};
+				if (ci.searchType === "abstract") {
+					ciMods.needSimp = true;
+				} else {
+					ciMods.reqTransformations = ci.reqTransformations.slice(1);
+				}
+				
+				equationChanged(exp, newExp);
+				bulkModify(ci, ciMods);
+			}
+		}
+	}
+}
+
+rule multiplyBothSides {
+	salience: 7;
+	when {
+		p: Problem;
+		e1: TreeExp e1.eqData.operation.includes("divide") {side: side1};
+		multiplyBy: String getAbs(e1.dividedBy) !== getAbs(multiplyBy) && getAbs(e1.multipliedBy) !== getAbs(multiplyBy) && !canCancelDivisor(e1.tree, multiplyBy)
+			from e1.eqData.denominator;
+		ci: cycleInfo ci.selection === "hint" || ci.searchType === "abstract" || nextTransformationIs(ci.reqTransformations, "multiplyBothSides", multiplyBy);
+		e2: TreeExp e2.side !== e1.side;
+		//side1 operator is divide
+		// one operand of ^ is const
+		// ^ wasn't newly divided into expression
+	} then {
+		var multByStr = multiplyBy.toString();
+		var preParse1 = mathUtil.multiplyBy(e1.tree.toString(), multByStr);
+		var preParse2 = mathUtil.multiplyBy(e2.tree.toString(), multByStr);
+		var newExp1 = algApplyRules(algParse(preParse1, true, true), ["popNegation"]);
+		var newExp2 = algApplyRules(algParse(preParse2, true, true), ["popNegation"]);
+		var newExp1Str = newExp1.toString();
+		var newExp2Str = newExp2.toString();
+	
+		var newFull = newExp1Str < newExp2Str ? newExp1Str+' = '+newExp2Str : newExp2Str+' = '+newExp1Str;
+		var input = side1 === "left" ? newExp1Str+' = '+newExp2Str : newExp2Str+' = '+newExp1Str;
+		var newOpStr = ci.opStr+'t,multiplyBothSides '+multByStr+';';
+		var toMemo = ci.searchType === "abstract" ? sortLikeTransformations(newOpStr) : newFull;
+		
+		setCTNodeData(toMemo);
+		
+		if (ci.selection === "hint") {
+			
+			backtrack();
+		} else if (inputRepeated(toMemo, 'full-'+ci.searchType)) {
+			backtrack();
+		} else {
+			recordInput(toMemo, 'full-'+ci.searchType);
+			let ciMods = {"modified": true, "opStr": newOpStr};
+			if (ci.searchType === "abstract") {
+				ciMods.needSimp = true;
+			} else {
+				ciMods.reqTransformations = ci.reqTransformations.slice(1);
+			}
+			equationChanged(e1, newExp1, {multipliedBy: multByStr});
+			equationChanged(e2, newExp2, {multipliedBy: multByStr});
+			
+			bulkModify(ci, ciMods);
+		}
+	}
+}
+
+
+/*
+transformation
+
+divide the equation by the factor of the productTerm
+c(ax+b) = d => c(ax + b)/c = d/c 
+*/
+rule divideFactor{
+	salience: 7;
+	when{
+		p: Problem;
+		e1: TreeExp e1.eqData.operation === "dist-times" {side: side1};
+		distTerm: Object !distTerm.parent from e1.eqData.distributable;
+		ci: cycleInfo ci.selection === "hint" || ci.searchType === "abstract" || nextTransformationIs(ci.reqTransformations, "divideFactor", distTerm.coeff)
+			{ogStr: expBefore};
+		e2: TreeExp e2.side !== e1.side && divisibleBy(e2.eqData.factors, distTerm.coeff);// && !hasCancelable(e2);
+		//side1 operator is times
+		  //one operand of ^ is const
+		//side2 is divisible by ^
+	}
+	then{
+		console.log("divideFactor");
+		var preParse1 = mathUtil.divideBy(e1.tree.toString(), distTerm.coeff);
+		var preParse2 = mathUtil.divideBy(e2.tree.toString(), distTerm.coeff);
+		
+		var newExp1 = algApplyRules(algParse(preParse1, true, true), ["popNegation"]);
+		var newExp2 = algApplyRules(algParse(preParse2, true, true), ["popNegation"]);
+		var newExp1Str = newExp1.toString();
+		var newExp2Str = newExp2.toString();
+		var newFull = newExp1Str < newExp2Str ? newExp1Str + ' = ' + newExp2Str : newExp2Str + ' = ' + newExp1Str;
+		var input = (e1.side === "left" ? newExp1Str+' = '+newExp2Str : newExp2Str+' = '+newExp1Str);
+		var newOpStr = ci.opStr+'t,divideFactor '+distTerm.coeff+';';
+		var toMemo = ci.searchType === "abstract" ? sortLikeTransformations(newOpStr) : newFull;
+		
+		setCTNodeData(toMemo);
+		if (ci.searchType === "abstract" || ci.selection === "hint") {
+			assert(new Skill("division-complex", "transformation"));
+		}
+		
+		if (ci.selection === "hint") {
+			if (!p.forceSimplify || !ci.canSimplify) { 
+				assert(new Hint("You have a product term on the "+side1+" side.  You can divide both sides by one of its factors."));
+				assert(new Hint("Divide both sides by "+distTerm.coeff));
+				if (p.dragNDrop) {
+					var pt = getFacts("PartialTransformation")[0];
+					if (!pt) {
+						assert(new Hint("Drag the division operator onto the "+s+" side."));
+					}
+				} else {
+					assert(new Hint("Enter "+input));
+				}
+			}
+			backtrack();
+		} else if (inputRepeated(toMemo, 'full-'+ci.searchType)) {
+			backtrack();
+		} else {
+			recordInput(toMemo, 'full-'+ci.searchType);
+			let ciMods = {"modified": true, "opStr": newOpStr};
+			if (ci.searchType === "abstract") {
+				ciMods.needSimp = true;
+			} else {
+				ciMods.reqTransformations = ci.reqTransformations.slice(1);
+			}
+			equationChanged(e1, newExp1, {'dividedBy': ''+distTerm.coeff});
+			equationChanged(e2, newExp2, {'dividedBy': ''+distTerm.coeff});
+			
+			bulkModify(ci, ciMods);
+		}
+	}
+}
+/*
+transformation
+
+divide the whole expression by coeff of the variable
+ax + b + c = d => (ax + b + c) / a = d / a
+*/
+
+rule divideByXCoefficient {
+	salience: 7;
+	when {
+		//side1
+		// one operand of ^ is var term
+		// coeff of ^ is not 1
+		//rest of side1 is divisible by ^
+		//side2 is divisible by ^
+		p: Problem;
+		e1: TreeExp; //e1.eqData.varOperands.length === 1 && !hasCancelable(e1) {side: side1};
+		varTerm: Object varTerm.coeff !== 1 && 
+			(!varTerm.parent || (varTerm.parent === e1.tree && divisibleBy(e1.eqData.factors, varTerm.coeff) && !isCancelable(varTerm, e1)))
+			from e1.eqData.varOperands;
+		ci: cycleInfo ci.selection === "hint" || ci.searchType === "abstract" || nextTransformationIs(ci.reqTransformations, "divideByXCoefficient", varTerm.coeff)
+			{ogStr: expBefore};
+		e2: TreeExp e2.side !== e1.side && divisibleBy(e2.eqData.factors, varTerm.coeff) && !isCancelable(varTerm, e2);
+	}
+	then{
+		var side1 = e1.side;
+		var expBefore = e1.tree.toString()+'='+e2.tree.toString();
+		var preParse1 = mathUtil.divideBy(e1.tree.toString(), varTerm.coeff);
+		var preParse2 = mathUtil.divideBy(e2.tree.toString(), varTerm.coeff);
+		var newExp1 = algApplyRules(algParse(preParse1, true, true), ["popNegation"]);
+		var newExp2 = algApplyRules(algParse(preParse2, true, true), ["popNegation"]);
+		var newExp1Str = newExp1.toString();
+		var newExp2Str = newExp2.toString();
+		var newFull = newExp1Str < newExp2Str ? newExp1Str + ' = ' + newExp2Str : newExp2Str + ' = ' + newExp1Str;
+		var input = (e1.side === "left" ? newExp1Str+' = '+newExp2Str : newExp2Str+' = '+newExp1Str);
+		var newOpStr = ci.opStr+'t,divideByXCoefficient '+varTerm.coeff+';';
+		var toMemo = ci.searchType === "abstract" ? sortLikeTransformations(newOpStr) : newFull;
+		
+		setCTNodeData(toMemo);
+		if (ci.searchType === "abstract" || ci.selection === "hint") {
+			let skill = (e1.eqData.operation === "simple" && e2.eqData.operation === "simple") ? "division-simple" : "division-complex";
+			assert(new Skill(skill, "transformation"));
+		}
+		
+		if (ci.selection === "hint") {
+			if (!p.forceSimplify || !ci.canSimplify) {
+				assert(new Hint("You have a variable with a coefficient on the "+side1+" side.  You can get the variable by itself by dividing both sides by the coefficient."));
+				assert(new Hint("Divide both sides by the coefficient of x, which is "+varTerm.coeff));
+				if (p.dragNDrop) {
+					var pt = getFacts("PartialTransformation")[0];
+					if (!pt) {
+						assert(new Hint("Drag the division operator onto the "+f+" side."));
+					}
+				} else {
+					assert(new Hint("Enter "+input));
+				}
+			}
+			backtrack();
+		} else if (inputRepeated(toMemo, 'full-'+ci.searchType)) {
+			backtrack();
+		} else {
+			recordInput(toMemo, 'full-'+ci.searchType);
+			let ciMods = {"modified": true, "opStr": newOpStr};
+			if (ci.searchType === "abstract") {
+				ciMods.needSimp = true;
+			} else {
+				ciMods.reqTransformations = ci.reqTransformations.slice(1);
+			}
+			
+			equationChanged(e1, newExp1, {'dividedBy': ''+varTerm.coeff});
+			equationChanged(e2, newExp2, {'dividedBy': ''+varTerm.coeff});
+			
+			bulkModify(ci, ciMods);
+		}
+	}
+}
+
+
+/*
+transformation
+
+move terms according to like/unlike terms
+term moved (t1) must be a simpleTerm, i.e. simplified (can't move 6/3, for ex.)
+*/
+rule addSubtractSimpleTerm{
+	salience : 8;
+	when {
+		//side1 operator is plus
+		//  pick a term of ^
+		//side1 has another term that is unlike ^
+		//side2 has a term that is like ^
+		//the term to move cannot be cancelled
+		p: Problem;
+		subtractFrom: TreeExp subtractFrom.tree.operator === "PLUS" {side: fromSide};
+		otherSide: TreeExp otherSide.side !== subtractFrom.side {side: toSide};
+		term: Object from getSubtractableTerms(subtractFrom, otherSide);
+		ci: cycleInfo ci.selection === "hint" || ci.searchType === "abstract" || nextTransformationIs(ci.reqTransformations, "addSubtractSimpleTerm", term.term.toString())
+			{ogStr: expBefore};
+	}
+	then {
+		var expBefore = subtractFrom.tree.toString()+'='+otherSide.tree.toString();
+		var subtractingConst = mathUtil.isConst(term.term);
+		var termStr = term.term.toString();
+		var addOrSub = "subtraction";
+		var absTermStr = termStr;
+		var newExp1Str = algApplyRules(subtractFrom.tree.toString()+'-'+termStr, ["flatten"]);
+		var newExp2Str = algApplyRules(otherSide.tree.toString()+'-'+termStr, ["flatten"]);
+		var newExp1 = algParse(newExp1Str, true, true);
+		var newExp2 = algParse(newExp2Str, true, true);
+		var newExp1Str = newExp1.toString();
+		var newExp2Str = newExp2.toString();
+		var newFull = newExp1Str < newExp2Str ? newExp1Str + ' = ' + newExp2Str : newExp2Str + ' = ' + newExp1Str;
+		var input = (subtractFrom.side === "left" ? newExp1Str+' = '+newExp2Str : newExp2Str+' = '+newExp1Str);
+		var newOpStr = ci.opStr+'t,addSubtractSimpleTerm '+termStr+';';
+		var toMemo = ci.searchType === "abstract" ? sortLikeTransformations(newOpStr) : newFull;
+		if (termStr.charAt(0) === "-") {
+			addOrSub = "addition";
+			absTermStr = termStr.slice(1);
+		}
+		
+		setCTNodeData(toMemo);
+		if (ci.searchType === "abstract" || ci.selection === "hint") {
+			let skill = termStr.includes("x") ? "subtraction-var" : "subtraction-const";
+			assert(new Skill(skill, "transformation"));
+		}
+		
+		if (ci.selection === "hint") {
+			if (!p.forceSimplify || !ci.canSimplify) {
+				var moving = (subtractingConst ? "constants" : "variables");
+				assert(new Hint("You have "+moving+" on both sides.  How can you have all "+moving+" on the "+toSide+" and none on the "+fromSide+"?"));
+				assert(new Hint("How can you get rid of "+termStr+" on the "+fromSide+"?"));
+				let btmOut = addOrSub === "addition" ?
+									"Add "+absTermStr+" to both sides." :
+									"Subtract "+absTermStr+" from both sides.";
+				assert(new Hint(btmOut));
+				if (p.dragNDrop) {
+					var pt = getFacts("PartialTransformation")[0];
+					if (!pt) {
+						assert(new Hint("Drag the "+addOrSub+" sign onto the "+s+" side."));
+					}
+				} else {
+					assert(new Hint("Enter "+input));
+				}
+			}
+			backtrack();
+		} else if (inputRepeated(toMemo, 'full-'+ci.searchType)) {
+			backtrack();
+		} else {
+			recordInput(toMemo, 'full-'+ci.searchType);
+			let ciMods = {"modified": true, "opStr": newOpStr};
+			if (ci.searchType === "abstract") {
+				ciMods.needSimp = true;
+			} else {
+				ciMods.reqTransformations = ci.reqTransformations.slice(1);
+			}
+			
+			equationChanged(subtractFrom, newExp1, {"varOrConstSide": subtractingConst ? "var" : "const"});
+			equationChanged(otherSide, newExp2, {"varOrConstSide": subtractingConst ? "const" : "var"});
+			bulkModify(ci, ciMods);
+		}
+	}
+}
+
+/*
+	BUG - non-strategic move of a term
+	moving term t is considered 'non-strategic' if any of the following conditions are met:
+		-there is a like term on the same side as t
+		-there is no like term on the other side
+		-there is no unlike term on the same side as t
+*/
+rule nonStrategicAddSubtractSimpleTerm {
+	salience: -2;
+	when {
+		b: Boolean b === true from false;
+		//side1 operator is plus
+		// pick a term
+		//side1 has another term that is like ^ OR side2 has no term that is like ^ OR side1 has no term that is unlike ^
+	} then {
+		console.log("nonStrategicAddSubtractSimpleTerm");
+		
+	}
+}
+/*
+
+rule DivideBothSidesToMakeNumbersSmaller {
+	salience: 3;
+	when {
+		ci: cycleInfo ci.otherSideFree && !ci.copyOK && !ci.inputIsBug && !ci.simplification {focus : f, ogStr: expAtStart};
+		p: Problem //(!termToBeCancelOnSide(p.termToBeCanceled,f)) //there is no term that needs to be canceled
+			{movedSimpleTerms: movedTerms, termToBeCanceled : termCancel};
+		ri: rowInfo;
+		e1: Expr e1.topLevel && e1.side === "left" {side : side1, terms : terms1};
+		e2: Expr (e2.side === "right") && e2.topLevel && (e1.terms.length > 1 || e2.terms.length > 1) //only when there is multiple terms
+			{side : side2, terms : terms2};
+		factor: Number from getCommonFactors(terms1, terms2);
+	} then {
+		console.log("DivideBothSidesToMakeNumbersSmaller, dividing by "+factor);
+		var nTrans = ci.opStr.split('t').length - 1;
+		if(p.shallowSearch && p.stepSkipLevel < 3 && nTrans) {
+			backtrack();
+		} else{
+			var expBefore = eqStr(e1.terms, e2.terms);
+			modify(ci,"opStr", ci.opStr+'t');
+			
+			if (!p.dragNDrop) {
+				divideExpBy(e1, {coeff: factor, var: null}, side1, p);
+				divideExpBy(e2, {coeff: factor, var: null}, side2, p);
+			} else {
+				// hmm.... 
+				if (!genPartialTransformation(e1, e2, "division", {var: null, coeff: factor}, ci)) {
+					backtrack();
+				}
+			}
+			
+			//shrinking the search tree
+			modify(ci,"divEarlyCancelTerm",e1);
+			modify(ci,"divEarlyCombineTerm",e1);
+			modify(ci,"dividedEarly",true);
+	
+			//data for displaying diagrams
+			var expAfter = eqStr(e1.terms, e2.terms);
+			var rowTransData = ri.transformations.slice();
+			var newTrans = {
+				operation: "division-complex",
+				operand: ''+factor,
+				expBefore: expBefore,
+				expAfter: expAfter
+			};
+			rowTransData.push(newTrans);
+			modify(ri, "transformations", rowTransData);
+			modify(ri, "modified", true);
+			
+			assert(new Skill(getSkillForTrans('division-complex'), "transformation"));
+			
+			var input = f === "left" ? eqStr(e1.terms) : (f === "right" ? eqStr(e2.terms) : expAfter);
+			
+			console.log("expAtStart is "+expAtStart);
+			
+			//setCTNodeData(expAfter);
+			
+			if (ci.selection === "hint") {
+				if (!p.forceSimplify || parser.algSimplified(expAtStart)) {
+					assert(new Hint("You have a variable with a coefficient on the "+side1+" side.  You can get the variable by itself by dividing both sides by the coefficient."));
+					assert(new Hint("Divide both sides by "+factor));
+					assert(new Hint("Enter "+input+(f !== "full" ? " on the "+s+" side." : '')));
+				}
+				backtrack();
+			} else if (inputRepeated(input, f)){
+				backtrack();
+			} else if (!p.dragNDrop) {
+				recordInput(input, f);
+			}
+		}
+	}
+}
+
+rule DivideByVarCoeffEarly {
+	salience: 3;
+	when {
+		ci: cycleInfo ci.otherSideFree && !ci.copyOK && !ci.inputIsBug && !ci.simplification {focus : f, ogStr: expAtStart};
+		p: Problem //(!termToBeCancelOnSide(p.termToBeCanceled,f)) //there is no term that needs to be canceled
+			{movedSimpleTerms: movedTerms, termToBeCanceled : termCancel};
+		ri: rowInfo;
+		t1: simpleTerm (t1 notIn termCancel && t1.var && t1.coeff != 1 && t1.coeff != 0) //the variable term is not to be canceled
+			{var : v, coeff : c};
+		not( t2: simpleTerm t2.var && t2 !== t1 );
+		e1: Expr (e1.topLevel && t1 in e1.terms) {side : side1, terms : terms1};
+		e2: Expr ((e2.side !== side1) && e2.topLevel && (e1.terms.length > 1 || e2.terms.length > 1)) //only when there is multiple terms
+			{side : side2, terms : terms2};
+	}
+	then{
+		var nTrans = ci.opStr.split('t').length - 1;
+		if(p.shallowSearch && p.stepSkipLevel < 3 && nTrans) {
+			backtrack();
+		}else if(!checkDivisible(e1,c) || !checkDivisible(e2,c)){
+			backtrack();
+		}else{
+			var expBefore = side1 === "left" ? eqStr(e1.terms, e2.terms) : eqStr(e2.terms, e1.terms);
+			modify(ci,"opStr", ci.opStr+'t');
+			
+			if (!p.dragNDrop) {
+				divideExpBy(e1, {coeff: c, var: null}, side1, p);
+				divideExpBy(e2, {coeff: c, var: null}, side2, p);
+			} else {
+				// hmm.... 
+				if (!genPartialTransformation(e1, e2, "division", {var: null, coeff: c}, ci)) {
+					backtrack();
+				}
+			}
+			
+			//shrinking the search tree
+			modify(ci,"divEarlyCancelTerm",e1);
+			modify(ci,"divEarlyCombineTerm",e1);
+			modify(ci,"dividedEarly",true);
+	
+			//data for displaying diagrams
+			var expAfter = side1 === "left" ? eqStr(e1.terms, e2.terms) : eqStr(e2.terms, e1.terms);
+			var rowTransData = ri.transformations.slice();
+			var newTrans = {
+				operation: "division-complex",
+				operand: ''+c,
+				expBefore: expBefore,
+				expAfter: expAfter
+			};
+			rowTransData.push(newTrans);
+			modify(ri, "transformations", rowTransData);
+			modify(ri, "modified", true);
+			
+			assert(new Skill(getSkillForTrans('division-complex'), "transformation"));
+			
+			var input = f === side1 ? eqStr(e1.terms) : (f === side2 ? eqStr(e2.terms) : expAfter);
+			
+			console.log("expAtStart is "+expAtStart);
+			
+			//setCTNodeData(expAfter);
+			
+			if (ci.selection === "hint") {
+				if (!p.forceSimplify || parser.algSimplified(expAtStart)) {
+					assert(new Hint("You have a variable with a coefficient on the "+side1+" side.  You can get the variable by itself by dividing both sides by the coefficient."));
+					assert(new Hint("Divide both sides by the coefficient of x, which is "+c));
+					assert(new Hint("Enter "+input+(f !== "full" ? " on the "+s+" side." : '')));
+				}
+				backtrack();
+			} else if (inputRepeated(input, f)){
+				backtrack();
+			} else if (!p.dragNDrop) {
+				recordInput(input, f);
+			}
+		}
+	}
+}
+
+rule MultiplyByNegOne {
+	salience: 10;
+	when {
+		ci: cycleInfo ci.opStr.length === 0 && ci.otherSideFree && !ci.copyOK && !ci.inputIsBug && !ci.simplification {focus : f, ogStr: expAtStart};
+		p: Problem //(!termToBeCancelOnSide(p.termToBeCanceled,f)) //there is no term that needs to be canceled
+			{movedSimpleTerms: movedTerms, termToBeCanceled : termCancel};
+		ri: rowInfo;
+		e1: Expr e1.topLevel && e1.side === "left"  {terms : terms1};
+		e2: Expr e2.topLevel && e2.side === "right" {terms : terms2};
+	}
+	then{
+		var nTrans = ci.opStr.split('t').length - 1;
+		if(p.shallowSearch && p.stepSkipLevel < 3 && nTrans) {
+			backtrack();
+		} else {
+			var expBefore = eqStr(terms1, terms2);
+			
+			if (!p.dragNDrop) {
+				multiplyExpBy(e1, {var: null, coeff: -1}, "left");
+				multiplyExpBy(e2, {var: null, coeff: -1}, "right");
+			} else {
+				// hmm.... 
+				if (!genPartialTransformation(e1, e2, "multiplication", {var: null, coeff: -1}, ci)) {
+					backtrack();
+				}
+			}
+			modify(ci,"opStr", ci.opStr+'t');
+			modify(ri,"modified",true);
+			modify(ci,"swapped",true);
+			
+			//data for displaying diagrams
+			var expAfter = eqStr(e1.terms, e2.terms);
+			var rowTransData = ri.transformations.slice();
+			var newTrans = {
+				operation: "multiplication",
+				operand: -1,
+				expBefore: expBefore,
+				expAfter: expAfter
+			};
+			rowTransData.push(newTrans);
+			modify(ri, "transformations", rowTransData);
+			
+			assert(new Skill(getSkillForTrans('multiplication'), "transformation"));
+			
+			//setCTNodeData(expAfter);
+			
+			var input = f === "left" ? eqStr(e1.terms) : (f === "right" ? eqStr(e2.terms) : expAfter);
+			if (ci.selection === "hint") {
+				if (!p.forceSimplify || parser.algSimplified(expAtStart)) { 
+					assert(new Hint("Multiply both sides by -1"));
+					assert(new Hint("Enter "+input+(f !== "full" ? " on the "+f+" side." : '')));
+				}
+				backtrack();
+			} else if(inputRepeated(input, f)){
+				backtrack();
+			}else if (!p.dragNDrop){
+				recordInput(input, f);
+				modify(ci, "multipliedByNegOne", true);
+			}
+		}
+	}
+}
+
+*/

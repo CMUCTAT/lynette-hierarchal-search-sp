@@ -1,0 +1,274 @@
+/*
+use algebra parser to compare student input
+*/
+global parser = new CTATAlgebraParser(new CTATVariableTable());
+
+function getSkillForTrans(operation, operand) {
+	var skill = '';
+	switch(operation) {
+		case 'division-simple':
+		case 'division-complex':
+		case 'multiplication':
+			skill = operation;
+		break;
+		case 'subtraction':
+		case 'addition':
+			skill = operation+(operand.includes('x') ? '-var' : '-const');
+		break;
+	}
+	return skill;
+}
+
+function getFullStr(e1, e2) {
+	return (e1.side === 'left' ? e1.toString() : e2.toString()) + ' = ' + (e1.side === "right" ? e1.toString() : e2.toString());
+}
+
+function setParser(){
+	CTATAlgebraParser.theParser = parser;
+}
+
+function hasConstTerm(exp) {
+	
+}
+
+function hasVarTerm(exp) {
+	
+}
+
+function getVarTerms(exp) {
+	
+}
+
+function getConstTerms(exp) {
+	
+}
+
+function getUnknownTerms(exp) {
+	
+}
+
+function getSimpType(ci) {
+	return ci.simplification ? ci.simplification.rule : null;
+}
+
+function getCurrentDiagramType(p) {
+	return p.currentDiagram ? p.currentDiagram.operation : null;
+}
+
+function genPartialTransformation(e1, e2, operation, operand, ci) {
+	var ptList = getFacts("PartialTransformation"),
+		pt;
+	if (!ptList.length && ci.stepType === "operator") {
+		//no pt started yet
+		pt = assert(new PartialTransformation(e1, e2, operation));
+	} else if (ptList.length === 1) {
+		pt = ptList[0];
+		if (pt.operator === operation) { 
+			if (ci.stepType === "operand") {
+				if (!pt.operand) {
+					//pt started, first operand dragged
+					modify(pt, "operand", operand);
+				} else if (!compSimpleTerms(pt.operand, operand)) {
+					//different operand already set for this pt, backtrack
+					return null;
+				}
+			} else {
+				//second operator dragged
+				modify(pt, "operator2Selected", true);
+			}
+		} else {
+			//different operator already set for this pt, backtrack
+			return null;
+		}
+	} else if (ptList.length > 1) {
+		throw new Error("something's wrong in genPartialTransformation ( > 1 pt's in WM )");
+	}
+	return pt;
+}
+
+function applyPartialTransformation(exp, pt, inclOperand) {
+	var expStr = eqStr(exp.terms),
+		operandStr = inclOperand ? simpleTermStr({var: pt.operand.var, coeff: pt.operand.coeff}) : "?" ;
+	switch(pt.operator) {
+		case 'addition': 
+			expStr += " + "+operandStr;
+		break;
+		case 'subtraction':
+			expStr += " - "+operandStr;
+		break;
+		case 'division': 
+			expStr = '('+expStr+')/'+operandStr;
+		break;
+		case 'multiplication':
+			expStr = operandStr+'*('+expStr+')';
+		break;
+	}
+	
+	return expStr;
+}
+
+function clearInterfaceElements(ie1, ie2) {
+	modify(ie1, "operator", null);
+	modify(ie2, "operator", null);
+	modify(ie1, "operand", null);
+	modify(ie2, "operand", null);
+}
+
+function getCancelTerm(termObject) {
+	return mathUtil.getCancelTerm(termObject);
+}
+
+function isCancelable(t1, exp) {
+	return mathUtil.isCancelable(t1, exp);
+}
+
+function areCancelable(t1, t2) {
+	return mathUtil.areCancelable(t1,t2);
+}
+
+function divisibleBy(factors, divisor) {
+	return mathUtil.divisibleBy(factors, divisor);
+}
+
+function getReciprocal(n) {
+	return mathUtil.getReciprocal(n);
+}
+
+function getAbs(n) {
+	return Math.abs(n);
+}
+
+function getIsNaN(n) {
+	return isNaN(n);
+}
+
+function canCancelDivisor(expTree, divisor) {
+	return mathUtil.canCancelDivisor(expTree, divisor);
+}
+
+function equationChanged(expFact, newTree, otherPropertiesChanged) {
+	var res = mathUtil.scanExpression(newTree);
+	otherPropertiesChanged = otherPropertiesChanged || {};
+	otherPropertiesChanged['tree'] = newTree;
+	otherPropertiesChanged['eqData'] = res;
+	bulkModify(expFact, otherPropertiesChanged);
+}
+
+function nextTransformationIs(transList, name, operand) {
+	let t = transList[0];
+	let ret = false;
+	if (t) {
+		ret = (t.name === name && algIdentical(t.operand, operand));
+	}
+	return ret;
+}
+
+function simplifyNoDistribute(eq, sort) {
+	let rules = ['flatten', 'computeConstants', 'combineSimilar', 'expand', 'removeIdentity'];
+	sort && rules.push('sort');
+	var ret = algApplyRules(eq, rules, true);
+	return ret;
+}
+
+function simplifiedNoDistribute(eq, order) {
+	let simpd = simplifyNoDistribute(eq, true).toString();
+	let parsed = algParse(eq, !order).toString();
+	var ret = equalExpressions(simpd, parsed);
+	return ret;
+}
+
+/** 	TRANSFORMATION FUNCTIONS 	**/
+
+function sortLikeTransformations(opStr) {
+	let tList = opStr.split(";"),
+		likeTLists = [],
+		startedAt = 0,
+		thisT = null,
+		thisTOp = null,
+		tBefore = tList[0].split(' ')[0];
+	
+	for (let i = 0; i < tList.length; i++) {
+		thisT = tList[i];
+		thisTOp = thisT.split(" ")[0];
+		if (thisTOp !== tBefore) {
+			likeTLists.push(tList.slice(startedAt, i));
+			startedAt = i;
+		}
+		if (i === tList.length - 1) {
+			if (thisTOp === tBefore) {
+				likeTLists.push(tList.slice(startedAt, tList.length));
+			} else {
+				likeTLists.push([thisT]);
+			}
+		}
+		tBefore = thisTOp;
+	}
+	
+	let newTList = [];
+	likeTLists.forEach((ltl)=> {
+		ltl.sort((lt1, lt2) => {
+			let lt1Operand = lt1.split(" ")[1];
+			let lt2Operand = lt2.split(" ")[1];
+			return lt1Operand < lt2Operand ? -1 : (lt2Operand < lt1Operand ? 1 : 0);
+		});
+	});
+	
+	let ret = likeTLists.flat().join(";");
+	return ret;
+}
+
+function getSubtractableTerms(subtractFrom, otherSide) {
+	return mathUtil.getSubtractableTerms(subtractFrom, otherSide);
+}
+
+function divideExpBy(exp, divisorVal, side, p) {
+	return mathUtil.divideExpBy(exp, divisorVal, side, p);
+}
+
+function multiplyExpBy(exp, multVal, side, p) {
+	return mathUtil.multiplyExpBy(exp, multVal, side, p);
+}
+
+function addTermToExp(probFact, exp, termCoeff, termVar, side, cancelTerm) {
+	return mathUtil.addTermToExp(probFact, exp, termCoeff, termVar, side, cancelTerm);
+}
+
+function applyTransformation(probFact, pt) {
+	var e1 = pt.exp1,
+		e2 = pt.exp2,
+		operand = pt.operand,
+		coeff = operand.coeff;
+	switch(pt.operator) {
+		case 'subtraction':
+			coeff = -1*coeff;
+		case 'addition':
+			addTermToExp(probFact, e1, coeff, operand.var, e1.side, (e1.terms.indexOf(operand) >= 0 ? operand : null));
+			addTermToExp(probFact, e2, coeff, operand.var, e2.side, (e2.terms.indexOf(operand) >= 0 ? operand : null));
+		break;
+		case 'division': 
+			divideExpBy(e1, operand, e1.side, probFact);
+			divideExpBy(e2, operand, e2.side, probFact);
+		break;
+		case 'multiplication':
+			multiplyExpBy(e1, operand, e1.side);
+			multiplyExpBy(e2, operand, e2.side);
+		break;
+	}
+}
+
+/** 
+ Simplification functions
+**/
+
+function getCombinableTerms(exp) {
+	return mathUtil.getCombinableTerms(exp);
+}
+
+
+function getCancelableTerms(exp) {
+	return mathUtil.getCancelableTerms(exp);
+}
+
+function hasCancelable(exp) {
+	return mathUtil.hasCancelable(exp);
+}

@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8">
+
+    <link rel="stylesheet" href="https://cdn.ctat.cs.cmu.edu/releases/latest/guppy/guppy-default.min.css">
+    <link rel="stylesheet" type="text/css" href="Assets/guppy-default-osk.min.css">
+    <link rel="stylesheet" type="text/css" href="Assets/CTAT.css">
+    <link rel="stylesheet" type="text/css" href="Assets/Lynnette-no-diagrams.css">
+
+	<script src="https://cdn.ctat.cs.cmu.edu/releases/latest/guppy/guppy.js"></script> 
+	<script src="Assets/guppy_osk.js"></script> 
+	<script src="Assets/jquery.min.js"></script>
+    <script src="Assets/ctat.min.js"></script>
+    <script src="Assets/ctatloader.js"></script>
+    <script src="Assets/transaction_mailer_users.js"></script>
+    <script src="Assets/nools.js"></script>
+    <script src="Assets/modelhelperfuns.js"></script>
+    <script src="Assets/Lynnette-diagrams.js"></script>
+    <script src="Assets/Lynnette-animations.js"></script>
+	<script> window.interfaceType = "typein" </script>
+  </head>
+
+  <body>
+    <div id="container">
+      <div id="topPanel">
+        <div class="row">
+          <div class="problemText solveGroup">Please solve for x</div>
+        </div>
+        <div class="row">
+          <div id="givenGroup" class="solveGroup">
+            <div id="start" class="CTATMathInput" data-ctat-tutor="false" data-ctat-highlight="false"></div>
+          </div>
+        </div>
+      </div>
+      <div id="middlePanel">
+		<div class="row">
+			<div id="solve1Group" class="CTATGroupingComponent solveGroup" data-ctat-use-componentlist="false">
+				<div class="center">
+				  <div id="solve1_HWAcc" align="right" class="leftTextHW"></div>
+				  <div id="solve1" align="center" class="CTATMathInput HWAcc" data-ctat-highlight="false"></div>
+				</div>
+			</div>
+        </div>
+		<div class="row">
+			<div id="solve2Group" class="CTATGroupingComponent solveGroup" data-ctat-use-componentlist="false">
+			   <div class="center">
+				  <div id="solve2_HWAcc" align="right" class="leftTextHW"></div>
+				  <div id="solve2" align="center" class="CTATMathInput HWAcc" data-ctat-highlight="false"></div>
+				</div>
+			</div>
+        </div>
+        <div class="row">
+			<div id="solve3Group" class="CTATGroupingComponent solveGroup" data-ctat-use-componentlist="false">
+				<div class="center">
+				  <div id="solve3_HWAcc" align="right" class="leftTextHW"></div>
+				  <div id="solve3" align="center" class="CTATMathInput HWAcc" data-ctat-highlight="false"></div>
+				</div>
+			</div>
+		</div>
+        <div class="row">
+			<div id="solve4Group" class="CTATGroupingComponent solveGroup" data-ctat-use-componentlist="false">
+			  <div class="center">
+				  <div id="solve4_HWAcc" align="right" class="leftTextHW"></div>
+				  <div id="solve4" align="center" class="CTATMathInput HWAcc" data-ctat-highlight="false"></div>
+			  </div>
+			</div>
+		</div>
+        <div class="row">
+			<div id="solve5Group" class="CTATGroupingComponent solveGroup" data-ctat-use-componentlist="false">
+			  <div class="center">
+				  <div id="solve5_HWAcc" align="right" class="leftTextHW"></div>
+				  <div id="solve5" align="center" class="CTATMathInput HWAcc" data-ctat-highlight="false"></div>
+			  </div>
+			</div>
+		</div>
+        <div class="row">
+			<div id="solve6Group" class="CTATGroupingComponent solveGroup" data-ctat-use-componentlist="false">
+			  <div class="center">
+				  <div id="solve6_HWAcc" align="right" class="leftTextHW"></div>
+				  <div id="solve6" align="center" class="CTATMathInput HWAcc" data-ctat-highlight="false"></div>
+				</div>
+			</div>
+        </div>
+		<div class="row">
+			<div id="solve7Group" class="CTATGroupingComponent solveGroup" data-ctat-use-componentlist="false">
+			    <div class="center">
+				  <div id="solve7_HWAcc" align="right" class="leftTextHW"></div>
+				  <div id="solve7" align="center" class="CTATMathInput HWAcc" data-ctat-highlight="false"></div>
+				</div>
+			</div>
+		</div>
+        <div class="row">
+			<div id="solve8Group" class="CTATGroupingComponent solveGroup" data-ctat-use-componentlist="false">
+				<div class="center">
+				  <div id="solve8_HWAcc" align="right" class="leftTextHW"></div>
+				  <div id="solve8" align="center" class="CTATMathInput HWAcc" data-ctat-highlight="false"></div>
+				</div>
+			</div>
+		</div>
+        <div class="row">
+			<div id="solve9Group" class="CTATGroupingComponent solveGroup" data-ctat-use-componentlist="false">
+				<div class="center">
+				  <div id="solve9_HWAcc" align="right" class="leftTextHW"></div>
+				  <div id="solve9" align="center" class="CTATMathInput HWAcc" data-ctat-highlight="false"></div>
+				</div>
+			</div>
+		</div>
+        <div class="row">
+			<div id="solve10Group" class="CTATGroupingComponent solveGroup" data-ctat-use-componentlist="false">
+				<div class="center">
+				  <div id="solve10_HWAcc" align="right" class="leftTextHW"></div>
+				  <div id="solve10" align="center" class="CTATMathInput HWAcc" data-ctat-highlight="false"></div>
+				</div>
+			</div>
+        </div>
+        <div class="row">
+			<div id="solve11Group" class="CTATGroupingComponent solveGroup" data-ctat-use-componentlist="false">
+				<div class="center">
+				  <div id="solve11_HWAcc" align="right" class="leftTextHW"></div>
+				  <div id="solve11" align="center" class="CTATMathInput HWAcc" data-ctat-highlight="false"></div>
+				</div>
+			</div>
+        </div>
+        <div class="row">
+			<div id="solve12Group" class="CTATGroupingComponent solveGroup" data-ctat-use-componentlist="false">
+				<div class="center">
+				  <div id="solve12_HWAcc" align="right" class="leftTextHW"></div>
+				  <div id="solve12" align="center" class="CTATMathInput HWAcc" data-ctat-highlight="false"></div>
+				</div>
+			</div>
+        </div>
+        <div class="row buttons">
+          <div class="solveGroup">
+            <div id="rightHintButton" class="CTATHintButton"></div>
+          </div>
+          <div id="finishButton" class="explainGroup">
+            <div id="doneButton" class="CTATDoneButton"></div>
+          </div>
+        </div>
+        <div class="row hints">
+          <div class="solveGroup">
+            <div id="HintWindow" class="CTATHintWindow"></div>
+          </div>
+          <div class="explainGroup"></div>
+        </div>
+      </div>
+      <div id="bottomPanel">
+        <div id="progressBar" class="CTATSkillWindow" data-ctat-initial="true"></div>
+      </div>
+    </div>
+    <script src="Assets/math.js"></script>
+  </body>
+</html>

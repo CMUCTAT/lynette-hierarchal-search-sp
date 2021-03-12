@@ -1,0 +1,233 @@
+define Problem {     // do we need this at all? mostly used for accessing the solution rows in order
+	name: null,
+	rows: null,
+	combinedDivTerms: null,
+	distributedDivTerms: null,
+	movedSimpleTerms : null,
+	termToBeCanceled : null,
+	variableSide : null,
+	constantSide : null,
+	divisorToBeDeleted : null,
+	swapped : null,
+
+	numTran : null,
+	numSim : null,
+
+	currTransformation : null,
+	
+	solution: null,
+
+	constructor: function(n,l, config, xVal) {
+		this.solution = xVal;
+		this.name = n;
+		this.rows = l;
+		this.movedSimpleTerms = [];
+		this.termToBeCanceled = [];
+		this.divisorToBeDeleted = [];
+		this.combinedDivTerms = [];
+		this.distributedDivTerms = [];
+		this.dividedBy = null;
+		this.swapped = false;
+		this.numTran = 10;
+		this.numSim = 10;
+		this.stepSkipLevel = config.stepSkipLevel || 3;
+		this.shallowSearch = config.shallowSearch || false;
+		this.useDiagrams = config.useDiagrams || false;
+		this.allowNegativeTerms = config.allowNegativeTerms || false;
+		this.dragNDrop = config.dragNDrop;
+		this.forceSimplify = config.forceSimplify;
+		this.showNextRow = config.showNextRow;
+		this.operatorsFirst = config.operatorsFirst;
+		this.allowNonStrategic = config.allowNonStrategic;
+	}
+}
+
+define cycleInfo {      // stores info that is needed only for the duration of the cycle
+	focus: null,
+	selection: null,
+	otherSideFree: null,     // call this bothSidesFree ?  seems more appropriate
+	copyOK: null,
+	factNum : null,
+
+	//for search space control:
+	divEarlyCancelTerm : null,
+	divEarlyCombineTerm : null,
+	
+	swapped : false,
+	combined : false,
+	divided : false,
+	addSubtracted : false,
+	dividedEarly : false,
+	addedToSideAfterDivide : false,
+	distributedMult : false,
+	multiplied : false,
+
+	divFactNum : null,
+	multFactNum : null,
+	cancelCombineNum : null,
+	addSubToSideCombineNum : null,
+	divAddSubToSideNum : null,
+
+	dividedTerms : null,
+
+	//for limiting step skipping
+	numTransformation: null,
+	numSimplification: null,
+	skippedTooManySteps : null,
+	opStr: null,
+	ogStr: null,
+	
+	//true if model-generated exp is bug prediction
+	inputIsBug: false,
+	bugMessage: '',
+	
+	//type of student interaction (dragndrop only)
+	stepType: null,
+	
+	//corresponding interfaceElement fact
+	interfaceElement: null,
+	
+	searchType: null,
+	
+	initialEqProperties: null,
+	
+	reqTransformations: null,
+	
+	constructor: function(f, s, free, nTrans, ogStr, st, ie, initialProps, searchType) {
+		this.focus = f;
+		this.selection = s;
+		this.otherSideFree = free;
+
+		this.divEarlyCancelTerm = null;
+		this.divEarlyCombineTerm = null;
+
+		this.divFactNum = -100;
+		this.multFactNum = -100;
+		this.cancelCombineNum = -100;
+		this.addSubToSideCombineNum = -100;
+		this.divAddSubToSideNum = -100;
+
+		this.dividedTerms = [];
+
+		this.numSimplification = 0;
+		this.numTransformation = nTrans || 0;
+		this.skippedTooManySteps = false;
+
+		this.opStr = '';
+		this.ogStr = ogStr;
+		
+		this.stepType = st;
+		
+		this.interfaceElement = ie;
+		
+		this.initialEqProperties = initialProps;
+		
+		this.searchType = searchType;
+		
+		this.reqTransformations = [];
+		
+		setFactNr(this);
+	}
+}
+
+define rowInfo {
+	modified: null,
+	tranformed: null,
+	number: null,
+	transformations: null,
+	constructor: function(rowNum) {
+		this.number = rowNum;
+		this.modified = false;
+		this.transformed = true;
+		this.transformations = [];
+	}
+}
+
+define interfaceElement {
+	name: null,
+	value: null,
+	constructor: function(n, v) {
+		this.name = n;
+		this.value = v;
+	}
+}
+
+define interfaceRow {
+	name: null,
+    preExplanations: null,        // may not use
+    solutionSteps: null,
+    postExplanations: null,       // may not use
+    groups: null,
+    constructor: function(n, l) {
+    	this.name = n;
+    	this.solutionSteps = [l];
+    }
+}
+
+define StudentValues {
+	selection: null,
+	action: null,
+	input: null,
+	constructor: function(s, a, i) {
+		this.selection = s;
+		this.action = a;
+		this.input = i;
+	}
+}
+
+define TPA {
+	selection: null,
+	action: null,
+	input: null,
+	constructor: function(s, a, i) {
+		this.selection = s;
+		this.action = a;
+		this.input = i;
+	}
+}
+
+define Hint {
+	precedence: 0,
+	msg: "",
+	constructor: function(m, optPrecedence) {
+		this.msg = m;
+		this.precedence = optPrecedence || 0;
+	}
+}
+
+define IsHintMatch  {
+	constructor: function() {     // do we need empty constructor?
+
+	}
+}
+
+define Skill {
+  name: null,
+  category: null,
+  constructor: function(n, c) {
+    this.name = n;
+    this.category = c;
+  }
+}
+
+define TreeExp {
+	tree: null,
+	hasVar: false,
+	hasConst: false,
+	varOperands: null,
+	constOperands: null,
+	side: null,
+	constructor: function(str, side) {
+		this.tree = str && algParse(str);
+		this.side = side;
+		this.eqData = {
+			varOperands: [],
+			constOperands: [],
+			multipliable: [],
+			combinablePairs: [],
+			hasVar: false,
+			hasConst: false,
+			operation: ''
+		};
+	}
+}

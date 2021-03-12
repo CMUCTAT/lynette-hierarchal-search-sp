@@ -1,0 +1,303 @@
+rule DistributeMultiplication{
+	salience: 5;
+	when{
+		b: Boolean b === true from false;
+	}then {
+		console.log("distributemultiplication");
+	}
+}
+
+
+rule CancelDivision {
+	salience: 5;
+	when {
+		b: Boolean b === true from false;
+	} then {
+		console.log("canceldivision");
+	}
+}
+
+rule CombineDivTerms {
+	salience: 5;
+	when{
+		b: Boolean b === true from false;
+	} then {
+		console.log("combinedivterms");
+	}
+}
+
+rule DivideProductTerm{
+	salience: 5;
+	when {
+		b: Boolean b === true from false;
+	}
+	then {   // simplest way may be to modify the coeff of the dividend term and move it to the toplevel
+		console.log("divideproductterm");
+	}
+}
+
+/**
+	MOVED DISTRIBUTION TO TRANSFORMATIONS
+**/
+
+rule Divide{
+	salience: 5;
+	when {
+		p: Problem !p.equationChanged;
+		ci: cycleInfo ci.searchType === "detailed";
+		exp: TreeExp {side: s};
+		toDivide: Object from exp.eqData.dividable;
+		otherExp: TreeExp otherExp !== exp;
+	}
+	then {		
+		var timesNode = toDivide.timesNode;
+		var timesNodeStr = timesNode.toString();
+		var quotient = algParse(algSimplify(toDivide.numer.toString()+"*"+toDivide.denom.toString()));
+		var quotientStr = quotient.toString();
+		var divType = '';
+		var divideBy = algSimplify(toDivide.denom+"^-1");
+		if (timesNode.factors.length > 2) {
+			let toDivideCpy = algParse(timesNode);
+			let s1Idx = timesNode.factors.indexOf(toDivide.numer),
+				s2Idx = timesNode.factors.indexOf(toDivide.denom),
+				higher = s1Idx > s2Idx ? s1Idx : s2Idx,
+				lower = higher === s1Idx ? s2Idx : s1Idx;
+			toDivideCpy.factors.splice(higher, 1);
+			toDivideCpy.factors.splice(lower, 1);
+			if (quotientStr !== '1') {
+				toDivideCpy.factors.push(quotient);
+				divType = 'divIntoMult';
+			} else {
+				divType = 'cancellation';
+			}
+			quotient = algParse(toDivideCpy.toString(), true, true); //so we don't get a 1-factor TIMES node
+		} else {
+			divType = 'simpleDivision';
+			quotient = algParse(algSimplify(quotientStr+'*'+timesNode.sign));
+		}
+		
+		var newExpStr, newFullStr;
+		if (toDivide.parent) {
+			let parentStr = toDivide.parent.toString();
+			let parentCpy = algParse(parentStr);
+			parentCpy.terms.splice(toDivide.childIdx,1,quotient);
+			let newParentStr = parentCpy.toString();	
+			newExpStr = exp.tree.toString().replace(parentStr, newParentStr);
+			newExp = algParse(newExpStr, true, true);
+		} else {
+			//division term was whole expression
+			newExp = algApplyRules(algParse(quotient, true, true), ["flatten"]);
+		}
+		newExpStr = newExp.toString();
+		let otherExpStr = otherExp.tree.toString();
+		newFullStr = newExpStr < otherExpStr ? newExpStr + ' = ' + otherExpStr : otherExpStr + ' = ' + newExpStr;
+		let input = exp.side === "left" ? newExpStr+' = '+otherExpStr : otherExpStr+' = '+newExpStr;
+		setCTNodeData(input);
+		assert(new Skill("divide", "simplification"));
+		if(ci.selection === "hint") {
+			setChainPriority(1);
+			assert(new Hint("You can simplify the fraction on the "+s+" side."));
+			switch (divType) {
+				case 'cancellation':
+					//"in the term <frac>, the two <n>s cancel each other out"
+					assert(new Hint("In the term "+timesNode+", the "+toDivide.numer+" on the bottom cancels out the "+toDivide.numer+" on top."));
+				break;
+				case 'divIntoMult': 
+					//"in the term <frac>, you can divide <numer> by <denom>
+					assert(new Hint("In the term "+timesNode+", you can divide "+toDivide.numer+" by "+divideBy));
+				break;
+				case 'simpleDivision': 
+					//what is <numer> divided by <denom>?
+					assert(new Hint("What is "+toDivide.numer+" divided by "+divideBy+'?'));
+				break;
+			}
+			assert(new Hint("Replace "+timesNode+" with "+quotient));
+			
+			if (p.dragNDrop) {
+				assert(new Hint("Drag "+eqStr(factorExpr2.terms)+" over "+eqStr(factorExpr1.terms)));
+			} else {
+				assert(new Hint("Enter "+input));
+			}
+			backtrack();
+		} else if (inputRepeated(newFullStr, 'full-detailed')) {
+			backtrack();
+		} else {
+			recordInput(newFullStr, 'full-detailed');
+		
+			equationChanged(exp, newExp);
+			modify(ci, "modified", true);
+		}
+	}
+}
+
+rule Multiply{
+	salience: 5;
+	when {
+		p: Problem !p.equationChanged;
+		ci: cycleInfo ci.searchType === "detailed";
+		exp: TreeExp {side: eSide};
+		toMultiply: Object from exp.eqData.multipliable;
+		otherExp: TreeExp otherExp !== exp;
+	}
+	then {
+		
+		var timesNode = toMultiply.timesNode;
+		var product = algParse(algSimplify(toMultiply.factors.map((f)=>f.toString()).join("*")));
+		var productStr = product.toString();
+		
+		if (timesNode.factors.length > 2) {
+			let toMultiplyCpy = algParse(timesNode);
+			let s1Idx = timesNode.factors.indexOf(toMultiply.factors[0]),
+				s2Idx = timesNode.factors.indexOf(toMultiply.factors[1]),
+				higher = s1Idx > s2Idx ? s1Idx : s2Idx,
+				lower = higher === s1Idx ? s2Idx : s1Idx;
+			toMultiplyCpy.factors.splice(higher, 1);
+			toMultiplyCpy.factors.splice(lower, 1);
+			if (productStr !== '1') {
+				toMultiplyCpy.factors.push(product);
+			}
+			product = algParse(toMultiplyCpy.toString()); //so we don't get a 1-factor TIMES node
+		} else {
+			product = algParse(algSimplify(productStr+'*'+timesNode.sign));
+		}
+		
+		var newExpStr, newFullStr;
+		if (toMultiply.parent) {
+			let parentStr = toMultiply.parent.toString();
+			let parentCpy = algParse(parentStr);
+			parentCpy.terms.splice(toMultiply.childIdx,1,product);
+			let newParentStr = parentCpy.toString();	
+			newExpStr = exp.tree.toString().replace(parentStr, newParentStr);
+			newExp = algParse(newExpStr, true, true);
+		} else {
+			//product term was whole expression
+			newExp = algApplyRules(algParse(product, true, true), ["flatten"]);
+		}
+		newExpStr = newExp.toString();
+		let otherExpStr = otherExp.tree.toString();
+		newFullStr = newExpStr < otherExpStr ? newExpStr + ' = ' + otherExpStr : otherExpStr + ' = ' + newExpStr;
+		let input = eSide === "left" ? newExpStr+' = '+otherExpStr : otherExpStr+' = '+newExpStr;
+		setCTNodeData(input);
+		if (ci.selection === "hint") {
+			setChainPriority(1);
+			assert(new Hint("You can simplify the "+eSide+" side by multiplying two terms together."));
+			assert(new Hint("What is "+toMultiply.factors[0]+" times "+toMultiply.factors[1]+"?"));
+			if (p.dragNDrop) {
+				assert(new Hint("Drag "+simpleTermStr(factorTerm1)+" over "+simpleTermStr(factorTerm2)+" to multiply them."));
+			} else {
+				assert(new Hint("Enter "+input));
+			}
+			backtrack();
+		}else if (inputRepeated(newFullStr, 'full-detailed')) {
+			backtrack();
+		} else{
+			recordInput(newFullStr, 'full-detailed');
+		
+			equationChanged(exp, newExp);
+			modify(ci, "modified", true);
+		}
+	}
+}
+
+rule CancelOrCombineLikeTerms {
+	salience : 6;
+	when {
+		p: Problem !p.equationChanged;
+		ci: cycleInfo ci.searchType === "detailed";
+		exp: TreeExp {side: eSide};
+		termPair: Object from exp.eqData.combinablePairs;
+		otherExp: TreeExp otherExp !== exp;
+	}
+	then {
+		var t1 = termPair.t1,
+			t2 = termPair.t2,
+			t1Str = t1.term.toString(),
+			t2Str = t2.term.toString(),
+			termParent = t1.parent;
+		
+		var sumOfTerms = algSimplify(algParse(t1Str+'+'+t2Str));
+		var sumStr = sumOfTerms.toString();
+		var simpType = '';
+		var newParentTerms = termParent.terms.slice(); //copy terms arr of parent node to combine terms
+		
+		var indices = [t1.childIdx, t2.childIdx].sort();
+		newParentTerms.splice(indices.pop(), 1); //rem t1 from copy
+		newParentTerms.splice(indices.pop(), 1); //rem t2 from copy
+		
+		if (sumStr !== '0') {
+			newParentTerms.push(sumOfTerms); //add new term that is sum of combined terms
+			simpType = 'combine';
+		} else {
+			simpType = 'cancel';
+		}
+		
+		var newParentTree = algParse(termParent.toString()); //copy of parent tree
+		newParentTree.terms = newParentTerms; //replace tree copy terms w/ our own
+		var newParentStr = newParentTree.toString(); //stringify modified tree copy
+		
+		var newExp = algApplyRules(algParse(exp.tree.toString().replace(termParent.toString(), newParentStr), true, true), ["flatten"]); //replace old parent str w/ ours
+		let newExpStr = newExp.toString();
+		let otherExpStr = otherExp.tree.toString();
+		newFullStr = newExpStr < otherExpStr ? newExpStr + ' = ' + otherExpStr : otherExpStr + ' = ' + newExpStr;
+		let input = eSide === "left" ? newExpStr+' = '+otherExpStr : otherExpStr+' = '+newExpStr;
+		setCTNodeData((exp.side === "left" ? newExpStr : otherExpStr) + ' = ' + (otherExp.side === "right" ? otherExpStr : newExpStr));
+		
+		var skill = simpType === "cancel" ? "cancel-" : "combine-like-";
+		skill += t1Str.includes('x') ? 'var' : 'const';
+		assert(new Skill(skill, "simplification"));
+		
+		if (ci.selection === "hint") {
+			setChainPriority(1);
+			assert(new Hint("You have two terms on the "+eSide+" side that you can add together"));
+			if (simpType === "combine") {
+				assert(new Hint("On the "+eSide+" side, combine like terms by adding "+t1.term+" and "+t2.term+"."));
+			} else {
+				assert(new Hint("On the "+eSide+" side, cancel like terms by removing "+t1.term+" and "+t2.term+" from the equation."));
+			}
+			if (p.dragNDrop) {
+				assert(new Hint("Drag "+term1+" onto "+term2));
+			} else {
+				assert(new Hint("Enter "+input));
+			}
+			backtrack();
+		} else if (inputRepeated(newFullStr, 'full-detailed')) {
+			backtrack();
+		} else{
+			recordInput(newFullStr, 'full-detailed');
+		
+			equationChanged(exp, newExp);
+			modify(ci, "modified", true);
+		}
+	}
+}
+
+/*
+rule CancelTerms {
+	salience : 7;
+	when {
+		p: Problem !p.equationChanged;
+		ci: cycleInfo;
+		exp: TreeExp;
+		termPair: Object from getCancelableTerms(exp);
+	}
+	then {
+		var t1 = termPair.t1,
+			t2 = termPair.t2,
+			termParent = t1.parent;
+		
+		var newParentTerms = termParent.terms.slice(); //copy terms arr of parent node to cancel terms
+		newParentTerms.splice(newParentTerms.indexOf(t1.term), 1); //rem t1 from copy
+		newParentTerms.splice(newParentTerms.indexOf(t2.term), 1); //rem t2 from copy
+		var newParentTree = algParse(termParent.toString()); //copy of parent tree
+		newParentTree.terms = newParentTerms; //replace tree copy terms w/ our own
+		var newParentStr = newParentTree.toString(); //stringify modified tree copy
+		
+		var newExpStr = exp.tree.toString().replace(termParent.toString(), newParentStr); //replace old parent str w/ ours
+		
+		console.log("cancelTerms got newExpStr "+newExpStr);
+		
+		modify(exp, "tree", algParse(newExpStr));
+		modify(p, 'equationChanged', true);
+	}
+}
+*/

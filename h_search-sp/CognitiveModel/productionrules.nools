@@ -1,0 +1,481 @@
+import("types.nools");
+import("skills.nools");
+import("functions.nools");
+import("transformations.nools");
+import("simplifications.nools");
+
+global shallowSearch = true;
+global allowNegativeTerms = true;
+
+/*****************************
+
+TODO: possible for there to be > 1 rowInfo in WM in drag-n-drop mode
+
+******************************/
+
+//set up working memory
+rule bootstrap {
+	when {
+		b: Boolean b === true from true;
+	}
+	then {
+		setParser();
+		
+		var config = {
+			stepSkipLevel: 3,
+			shallowSearch: false,
+			useDiagrams: false,
+			allowNegativeTerms: true,
+			dragNDrop: false,
+			forceSimplify: false,
+			pregenConflictTree: false,
+			operatorsFirst: false,
+			allowNonStrategic: false,
+			diagramsFirst: false
+		};
+		//set up problem config
+		//amt of step skipping allowed
+		try {
+			config.stepSkipLevel = stepSkipLevel;
+		} catch(e) {}
+		
+		//don't deep search if step skipping disallowed (to get bug feedback)
+		try {
+			config.shallowSearch = shallowSearch;
+		} catch(e) {}
+		
+		//whether this interface uses diagrams 
+		try {
+			config.useDiagrams = (interfaceType === "diagrams") || (getInterfaceType() === "diagrams");
+		} catch(e) {}
+		
+		try {
+			config.diagramsFirst = diagramsFirst;
+		} catch(e) {}
+		
+		//whether negative terms are allowed to be created by transformations
+		try {
+			config.allowNegativeTerms = allowNegativeTerms;
+		} catch(e) {}
+		
+		//whether this interface uses drag n' drop
+		try {
+			//config.dragNDrop = dragNDrop; 
+			config.dragNDrop = (getInterfaceType() === "dragndrop");
+		} catch (e) {}
+		if (config.dragNDrop) {
+			config.shallowSearch = true;
+			config.stepSkipLevel = 1;
+		}
+		
+		//whether equation must be fully simplified before starting new transformation
+		try {
+			config.forceSimplify = forceSimplify;
+		} catch (e) {}
+		
+		//whether to pregen conflict tree
+		try {
+			config.pregenConflictTree = pregenConflictTree;
+		} catch (e) {}
+		
+		//whether student must select both operators before any operands (dnd only)
+		try {
+			config.operatorsFirst = operatorsFirst;
+		} catch (e) {}
+		
+		try {
+			config.allowNonStrategic = allowNonStrategic;
+		} catch (e) {}
+		
+		//setting up interface (one input)
+		var initName = "start";
+		assert(new interfaceElement(initName));
+		assert(new interfaceRow("row0", initName));
+		var rowNames = [];
+		if (config.dragNDrop) {
+			assert(new interfaceElementDnd("left", "left"));
+			assert(new interfaceElementDnd("right", "right"));
+			assert(new interfaceRow("intRow", "left", "right"));
+			rowNames.push("intRow");
+			//one persistent rowInfo fact for dragNDrop
+			assert(new rowInfo(1));
+		} else {
+			//  Note: row0 should not be in the list of rows (because used already)
+			for (var i = 1; i < 16; i++) {
+				name = "row"+i;
+				lName = "solve"+i;
+				rowNames.push(name);
+				assert(new interfaceElement(lName));
+				assert(new interfaceRow(name, lName)); 
+				// Leaving out the explanation fields for now
+			}
+		}
+		
+		
+		var p = new Problem(pName, rowNames, config, finalX);
+		assert(p);
+
+		setProblemAttribute("use_backtracking", true);
+		setProblemAttribute("use_hint_fact", true);
+		if (config.pregenConflictTree) {
+			setProblemAttribute("pregen_conflict_tree", true);
+			addPregenSAI({selection: "solve1"});
+			addPregenSAI({selection: "done"});
+		}
+		
+		//TPAs to set up initial expression
+		var initStr = initLeft+' = '+initRight;
+		if (config.dragNDrop) {
+			assert(new TPA('_root', "setEqn", initStr));
+		} else {
+			assert(new TPA(initName, "UpdateTextField", initStr));
+			//TPA to display tape diagrams for initial exp
+			if (config.useDiagrams) {
+				var argStr = initLeft+' = '+initRight+','+finalX+','+config.diagramsFirst ? 'diagramsFirst' : 'diagramsLast';
+				assert(new TPA("_root", "setGivenDiagrams", argStr));
+				modify(p, "currentDiagram", {
+					operation: "initial",
+					expBefore: initLeft+"="+initRight
+				});
+			} else {
+				assert(new TPA("_root", "showNextRow", ''));
+			}
+		}
+		
+		var initLeftExp = assert(new TreeExp(initLeft, 'left'));
+		var initRightExp = assert(new TreeExp(initRight, 'right'));
+		
+		var resLeft = mathUtil.scanExpression(initLeftExp.tree);
+		var resRight = mathUtil.scanExpression(initRightExp.tree);
+		
+		modify(initLeftExp, "eqData", resLeft);
+		modify(initRightExp, "eqData", resRight);
+		halt();
+	}
+}
+
+global simpList = ["Divide", "Multiply", "CancelOrCombineLikeTerms"];
+
+function checkCanSimplify() {
+	var agenda = getAgenda();
+	var canSimp = !!agenda.find((activation)=>simpList.includes(activation.split(":")[0]));
+	console.log("checkCanSimplify returning "+canSimp);
+	return canSimp;
+}
+
+//handles new student input, assert new cycleInfo fact
+rule focusSolutionStep {
+	when {
+		not (h: IsHintMatch);
+		not (ci: cycleInfo);
+		p: Problem !p.equationChanged {rows: rows};
+		sv: StudentValues sv.tutored {selection: sel};
+		r: interfaceRow r.name === rows[0] {solutionSteps: steps};
+		ie1: interfaceElement ie1.name === sel && ie1.name in steps && !ie1.value;
+		e1: TreeExp e1.side === "left";
+		e2: TreeExp e2.side === "right";
+	}
+	then {
+		clearInputHistory();
+		let e1Str = e1.tree.toString(),
+			e2Str = e2.tree.toString(),
+			eStr = e1Str+'='+e2Str;
+		
+		var parsed = algParse(sv.input);
+			
+		//check input validity
+		let valid = true,
+			msg = '';
+		if (!parsed) {
+			valid = false;
+			msg = "Your input is not valid algebra.";
+		} else if (!sv.input.includes("=")) {
+			valid = false;
+			msg = "You are missing an equals sign.  Make sure to type in the entire equation.";
+		} else if (!algEvaluate(parsed, {x: p.solution})) {
+			valid = false;
+			msg = "";
+		}
+		if (!valid) {
+			checkSAI({selection: sv.selection, action: sv.action, input: sv.input}, null, true);
+			msg && setSuccessOrBugMsg(msg);
+			backtrack();
+		}
+		
+		//change simp here
+		var simpStudentInput = simplifyNoDistribute(parsed).toString();
+		
+		let initialEqProperties = {
+			left: {
+				multipliedBy: e1.multipliedBy,
+				dividedBy: e1.dividedBy,
+				varOrConstSide: e1.varOrConstSide
+			},
+			right: {
+				multipliedBy: e2.multipliedBy,
+				dividedBy: e2.dividedBy,
+				varOrConstSide: e2.varOrConstSide
+			}
+		};
+		modify(sv, "inputSimplified", simpStudentInput);
+		var ci = assert(new cycleInfo("full", sel, true, p.nTransLastCycle, eStr, null, null, initialEqProperties, "abstract"));
+		assert(new rowInfo(16-rows.length));
+		if (!algSimplified(e1Str) || !algSimplified(e2Str)) {
+			modify(ci, "needSimp", true);
+		}
+	}
+}
+
+rule startHintCycle {
+	when {
+		p: Problem !p.dragNDrop {rows: pRows};
+		h: IsHintMatch;
+		not( ci: cycleInfo );
+		r: interfaceRow r.name === pRows[0] {solutionSteps: steps};
+		ie1: interfaceElement ie1.name in steps && !ie1.value; 
+		e1: TreeExp e1.side === "left";
+		e2: TreeExp e2.side === "right";		
+	} then {
+		clearInputHistory();
+		let eStr = e1.tree.toString()+" = "+e2.tree.toString();;
+		var ci = assert(new cycleInfo("full", "hint", true, p.nTransLastCycle, eStr, null, null, null, "detailed"));
+		assert(new rowInfo(16-pRows.length));
+		let canSimplify = checkCanSimplify();
+		modify(ci, "canSimplify", canSimplify);
+	}
+}
+
+rule writeAbstract {
+	salience: 10;
+	when {
+		not (h: IsHintMatch);
+		ri: rowInfo;
+		ci: cycleInfo ci.searchType === "abstract" && !ci.needSimp {selection: s, copyOK: cOK, inputs: inputList, opStr: os, ogStr: expAtStart};
+		sv: StudentValues sv.selection === s {input : studentInput};
+		p: Problem !p.dragNDrop && (ci.modified || cOK) {rows: rows, stepSkipLevel: ssl};
+		ie: interfaceElement ie.name === s;
+		e1: TreeExp e1.side === 'left';
+		e2: TreeExp e2.side == 'right';
+	} then {
+		var rowNum = parseInt(/\d+$/.exec(rows[0])[0], 10);
+		//change simp here
+		var simplifiedInput = simplifyNoDistribute(e1.tree)+'='+simplifyNoDistribute(e2.tree);
+		var operations = os.split(';'),
+			transformations = [],
+			simplifications = [];
+		operations.forEach((o)=> {
+			if (o) {
+				let sp = o.split(",");
+				if (sp[0] === 's') {
+					simplifications.push(sp[1]);
+				} else {
+					let nameAndOperand = sp[1].split(' ');
+					transformations.push({name: nameAndOperand[0], operand: nameAndOperand[1]});
+				}
+			}
+		});
+		
+		let nTrans = transformations.length,
+			nSimp = simplifications.length;
+			
+		writeInput(simplifiedInput);
+		setCTNodeData(simplifiedInput);
+		
+		var skippedTooManySteps = false;
+		var firstOpIsTrans = operations[0].charAt(0) === 't';
+		var wasSimpd = parser.algSimplified(expAtStart);
+		var needToSimplify = p.forceSimplify && !wasSimpd && firstOpIsTrans;
+		
+		switch(ssl) {
+			case 1: //1 trans OR 1 simp allowed
+				skippedTooManySteps = (nTrans + nSimp) > 1;
+				break;
+			case 2: //1 trans, infinite simp allowed, trans must be first operation
+				skippedTooManySteps = (!firstOpIsTrans && nTrans > 0) || (nTrans > 1);
+				break;
+		}
+		var isBug = ci.inputIsBug || skippedTooManySteps || needToSimplify;
+		var swapped = false;
+		var compFunc = function(studentEq, tutorEq) {
+			var studentSides = studentEq.split("=");
+			var studentSwap = studentSides[1]+'='+studentSides[0];
+			if (checkEqualEquation(studentEq, tutorEq)) {
+				return true;
+			} else if (checkEqualEquation(studentSwap, tutorEq)) {
+				swapped = true;
+				return true;
+			}
+		};
+		
+		if (compFunc(sv.inputSimplified, simplifiedInput)) {
+			//match found in abstract search
+			console.log("abstract match found: "+simplifiedInput);
+			//start detailed search:
+				//reset tutor equation to initial state
+				var sides = expAtStart.split('='),
+					leftTree = algParse(sides[0]),
+					rightTree = algParse(sides[1]),
+					propsToModify1 = ci.initialEqProperties.left,
+					propsToModify2 = ci.initialEqProperties.right;
+				if (swapped) {
+					propsToModify1.side = "right";
+					propsToModify2.side = "left";
+				}
+				equationChanged(e1, leftTree, propsToModify1);
+				equationChanged(e2, rightTree, propsToModify2);
+				//begin normal search, only allowing transformations performed during matching abstract search chain
+				console.log("equation reset to "+e1.tree.toString()+" = "+e2.tree.toString());
+				console.log("required transformations are ",transformations.slice());
+				modify(ci, "reqTransformations", transformations);
+				modify(ci, "searchType", "detailed");
+				clearInputHistory("full-detailed");
+				setCTNodeData(transformations.map((t)=> t.name+' '+t.operand).join(", "));
+				let canSimplify = checkCanSimplify();
+				modify(ci, "canSimplify", canSimplify);
+		} else {
+			backtrack();
+		}
+	}
+}
+
+rule write {
+	salience: 10;
+	when {
+		not (h: IsHintMatch);
+		ri: rowInfo;
+		ci: cycleInfo ci.searchType === "detailed" && !ci.reqTransformations.length
+			{selection: s, copyOK: cOK, inputs: inputList, opStr: os, ogStr: expAtStart};
+		sv: StudentValues sv.selection === s {input : studentInput};
+		p: Problem !p.dragNDrop && (ci.modified || cOK) {rows: rows, stepSkipLevel: ssl};
+		ie: interfaceElement ie.name === s;
+		e1: TreeExp e1.side === 'left';
+		e2: TreeExp e2.side == 'right';
+	}
+	then {
+		var rowNum = parseInt(/\d+$/.exec(rows[0])[0], 10);
+		var input = e1.tree.toString()+'='+e2.tree.toString();
+		var nTrans = os.split('t').length - 1;
+		var nSimp = os.split('s').length - 1;
+		writeInput(input);
+	
+		var skippedTooManySteps = false;
+		var ti = os.indexOf('t');
+		
+		var wasSimpd = !ci.canSimplify; //simplifiedNoDistribute(expAtStart);
+		var needToSimplify = p.forceSimplify && !wasSimpd && (ti === 0);
+		
+		switch(ssl) {
+			case 1: //1 trans OR 1 simp allowed
+				skippedTooManySteps = (nTrans + nSimp) > 1;
+				break;
+			case 2: //1 trans, infinite simp allowed, trans must be first operation
+				skippedTooManySteps = (ti > 0) || (nTrans > 1);
+				break;
+		}
+		var isBug = ci.inputIsBug || skippedTooManySteps || needToSimplify;
+		
+		var compFunc = function(sai1, sai2) {
+			var match = (sai1.selection === sai2.selection && sai1.action === sai2.action);
+			if (match) {
+				var input1 = sai1.input;
+				var input2 = sai2.input;
+				var input1Sides = input1.split("=");
+				var input1Swap = input1Sides[1]+'='+input1Sides[0];
+				if (checkEqualEquation(input1, input2)) {
+					return true;
+				} else if (checkEqualEquation(input1Swap, input2)) {
+					modify(e1, "side", "right");
+					modify(e2, "side", "left");
+					return true;
+				}
+			}
+		};
+		
+		if(checkSAI({selection: s, action: "UpdateTextField", input: input}, compFunc, isBug)) {
+			if(isBug){
+				console.log("bug match");
+				var message;
+				if (needToSimplify) {
+					message = "You need to fully simplify the expression before you can begin a new transformation";
+				} else if (skippedTooManySteps) {
+					message = "Yes, that is correct, but you are skipping too many steps. Can you go step-by-step?";
+				} else {
+					message = ci.bugMessage;
+				}
+				setSuccessOrBugMsg(message);
+				backtrack();
+			}else{
+				//correct
+				modify(ie, "value", input);    
+				if (!ci.otherSideFree || ci.focus === "full") {
+					//whole row completed
+					retract(ri);
+					modify(p, "rows", rows.slice(1));
+					rowNum++;
+					addPregenSAI({selection: "solve"+rowNum});
+					addPregenSAI({selection: "done"});
+					modify(p, "nTransLastCycle", 0);
+					var simpd = parser.algSimplified(input);
+					var tpa = null,
+						diagramData = null,
+						transList = ri.transformations;
+				
+					if (p.useDiagrams) {
+						if (ri.transformations.length) {
+							if (simpd) {
+								//show diagrams for transformation
+								tpa = genDiagramTPA(ri.transformations);
+								diagramData = ri.transformations[0];
+							} else {
+								p.diagramsDeferredFor = ri.transformations;
+							}
+						} else if (p.diagramsDeferredFor && simpd) {
+							//show diagrams for transformation
+							tpa = genDiagramTPA(p.diagramsDeferredFor);
+							diagramData = p.diagramsDeferredFor[0];
+							p.diagramsDeferredFor = null;
+						}
+					}
+					if (tpa) {	
+						assert(new TPA(tpa[0], tpa[1], tpa[2]));
+						if (diagramData) {
+							modify(p, "currentDiagram", diagramData);
+						}
+					} else {
+						assert(new TPA("_root", "showNextRow", 'arg'));
+					}
+				} else {
+					console.error("shouldn't be here");
+					addPregenSAI({selection: "solve"+(f === "left" ? "Right" : "Left")+rowNum});
+					modify(p, "nTransLastCycle", nTrans);
+				}
+				modify(p, "swapped", ci.swapped);
+				retract(ci);
+				
+				halt();
+			}
+		}else {
+			//wrong
+			//console.log("wrong");
+			backtrack();
+		}
+	}
+}
+
+rule done {
+	when {
+		p: Problem !p.currentDiagram && !p.dragNDrop;
+		not(ri: rowInfo);
+		varSide: TreeExp varSide.tree.operator === "VAR" && varSide.tree.sign === 1;
+		constSide: TreeExp constSide.side !== varSide.side && !getIsNaN(constSide.tree.toString());
+	}
+	then {
+		assert(new Hint("You've determined the value of x, so the problem is done.  Click \"Finish Problem\" to move on"));
+		if (checkSAI({selection: "done", action: "ButtonPressed", input: -1})) {
+			halt();
+		} 
+		else {
+			backtrack();
+		}
+	}
+}

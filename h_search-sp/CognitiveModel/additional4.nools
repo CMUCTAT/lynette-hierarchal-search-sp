@@ -1,0 +1,14 @@
+import('productionrules.nools');
+global pName = 'additional4';
+global initLeft = 'x-7';
+global initRight = '8';
+global stepSkipLevel = 3;
+global shallowSearch = false;
+global forceSimplify = false;
+global pregenConflictTree = false;
+global parseProblem = true;
+global interfaceType = 'typein';
+global operatorsFirst = true;
+global language = "english";
+global finalX = 15;
+global diagramsFirst = false;

@@ -1,0 +1,14 @@
+import('productionrules.nools');
+global pName = 'problem13';
+global initLeft = '1+2(2x+1)';
+global initRight = '7';
+global stepSkipLevel = 3;
+global shallowSearch = false;
+global forceSimplify = false;
+global pregenConflictTree = false;
+global parseProblem = true;
+global interfaceType = 'typein';
+global operatorsFirst = true;
+global language = "english";
+global finalX = 1;
+global diagramsFirst = false;
