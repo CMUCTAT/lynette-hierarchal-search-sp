@@ -6,7 +6,7 @@ var variableName = "struggle"
 //initializations (do not touch)
 var detector_output = {name: variableName,
 						category: "Dashboard", 
-						value: {state: null, elaboration: "", image: "HTML/Assets/images/struggle-01.png"},
+						value: {state: false, elaboration: "", image: "HTML/Assets/images/struggle-01.png"},
 						history: "",
 						skill_names: "",
 						step_id: "",
@@ -20,6 +20,7 @@ var mailer;
 //based on "remembered" values across problem boundaries, here
 // (initialize these at the bottom of this file, inside of self.onmessage)
 var attemptWindow;
+var attemptWindowTimes;
 var intervalID;
 var onboardSkills;
 var initTime;
@@ -163,6 +164,18 @@ function senseOfWhatToDo(e){
 	    }
 	}
 	return true;
+}
+
+function firstContributingAttempt(state) {
+	let falseAttemptFn = (numCorrect) => numCorrect > 0;
+	let trueAttemptFn = (numCorrect) => numCorrect == 0;
+	let firstFalseAttempt = attemptWindow.findIndex(falseAttemptFn);
+	let firstTrueAttempt = attemptWindow.findIndex(trueAttemptFn);
+	if (state) {
+		return attemptWindow.findIndex(trueAttemptFn);
+	} else {
+		return attemptWindow.findIndex(falseAttemptFn);
+	}
 }
 
 //evaluation of each step
@@ -379,13 +392,17 @@ function receive_transaction( e ){
 		else{
 			attemptCorrect = (e.data.tutor_data.action_evaluation.toLowerCase() == "correct") ? 1 : 0;
 			attemptWindow.shift();
+			attemptWindowTimes.shift();
 			attemptWindow.push(attemptCorrect);
+			attemptWindowTimes.push(new Date(e.data.tutor_data.tutor_event_time));
 		}
 
 		if (help_model_output == "ask teacher for help/try step"){
 			for(var i=0; i<(windowSize-threshold); i++){
-				attemptWindow.shift(); 
+				attemptWindow.shift();
+				attemptWindowTimes.shift(); 
 				attemptWindow.push(0)};
+				attemptWindowTimes.push(new Date(e.data.tutor_data.tutor_event_time));
 		}
 
 		var sumCorrect = attemptWindow.reduce(function(pv, cv) { return pv + cv; }, 0);
@@ -425,7 +442,7 @@ function receive_transaction( e ){
 			initTime = new Date();
 			detector_output.history = JSON.stringify([attemptWindow, initTime, onboardSkills]);
 			detector_output.value = {state: true, elaboration: elaborationString};
-			detector_output.time = new Date();
+			detector_output.time = attemptWindowTimes[firstContributingAttempt(true)];
 
 			mailer.postMessage(detector_output);
 			postMessage(detector_output);
@@ -433,12 +450,12 @@ function receive_transaction( e ){
 		}
 		else if (detector_output.value.state==true && (sumCorrect <= threshold)){
 			detector_output.history = JSON.stringify([attemptWindow, initTime, onboardSkills]);
-			detector_output.time = new Date();
+			detector_output.time = attemptWindowTimes[firstContributingAttempt(true)];
 		}
 		else if (detector_output.value.state!=false) {
 			detector_output.value = {state: false, elaboration: elaborationString};
 			detector_output.history = JSON.stringify([attemptWindow, initTime, onboardSkills]);
-			detector_output.time = new Date();
+			detector_output.time = attemptWindowTimes[firstContributingAttempt(false)];
 
 			mailer.postMessage(detector_output);
 			postMessage(detector_output);
@@ -488,11 +505,13 @@ self.onmessage = function ( e ) {
 		//
 		if (detector_output.history == "" || detector_output.history == null){
 			attemptWindow = Array.apply(null, Array(windowSize)).map(Number.prototype.valueOf,1);
+			attemptWindowTimes = Array.apply(null, Array(windowSize)).map(x => new Date(Date.now()));
 			onboardSkills = {};
 		}
 		else{
 			var all_history = JSON.parse(detector_output.history);
 			attemptWindow = all_history[0];
+			attemptWindowTimes = Array.apply(null, Array(windowSize)).map(x => new Date(Date.now()));
 			initTime = new Date(all_history[1]);
 			onboardSkills = all_history[2];
 		}

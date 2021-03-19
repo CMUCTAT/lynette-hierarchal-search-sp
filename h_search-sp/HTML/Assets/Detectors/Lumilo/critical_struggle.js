@@ -6,7 +6,7 @@ var variableName = "critical_struggle"
 //initializations (do not touch)
 var detector_output = {name: variableName,
 						category: "Dashboard", 
-						value: {state: null, elaboration: "", image: "HTML/Assets/images/unproductivestruggle-01.png"},
+						value: {state: false, elaboration: "", image: "HTML/Assets/images/unproductivestruggle-01.png"},
 						history: "",
 						skill_names: "",
 						step_id: "",
@@ -40,7 +40,15 @@ var BKTparams = {p_transit: 0.2,
 var wheelSpinningAttemptThreshold = 10; //following Beck and Gong's wheel-spinning work
 var seedTime = 25;
 
-
+function firstContributingAttempt(state) {
+	let falseAttemptFn = (attemptCorrect) => attemptCorrect == 0;
+	let trueAttemptFn = (attemptCorrect) => attemptCorrect == 1;
+	if (state) {
+		return attemptWindow.findIndex(trueAttemptFn);
+	} else {
+		return attemptWindow.findIndex(falseAttemptFn);
+	}
+}
 
 function updateSkillLevelsAttempts(e, rawSkills, skill, currStepCount){
 	if( skill in skillLevelsAttempts ){
@@ -187,7 +195,7 @@ function receive_transaction( e ){
 		attemptWindow.shift();
 		attemptWindow.push( isWheelSpinning ? 1 : 0 );
 		attemptWindowTimes.shift();
-		attemptWindow.push( new Date(e.data.tutor_data.tutor_event_time) );
+		attemptWindowTimes.push( new Date(e.data.tutor_data.tutor_event_time) );
 		var sumAskTeacherForHelp = attemptWindow.reduce(function(pv, cv) { return pv + cv; }, 0);
 
 		console.log(attemptWindow);
@@ -217,7 +225,7 @@ function receive_transaction( e ){
 			initTime = new Date();
 			detector_output.history = JSON.stringify([attemptWindow, skillLevelsAttempts, initTime, onboardSkills]);
 			detector_output.value = {state: true, elaboration: elaborationString};
-			detector_output.time = attemptWindowTimes[attemptWindow.findIndex((attempt) => attempt == 1)];
+			detector_output.time = attemptWindowTimes[firstContributingAttempt(true)];
 
 			mailer.postMessage(detector_output);
 			postMessage(detector_output);
@@ -225,12 +233,12 @@ function receive_transaction( e ){
 		}
 		else if (detector_output.value.state==true && (sumAskTeacherForHelp >= threshold)){
 			detector_output.history = JSON.stringify([attemptWindow, skillLevelsAttempts, initTime, onboardSkills]);
-			detector_output.time = attemptWindowTimes[attemptWindow.findIndex((attempt) => attempt == 1)];
+			detector_output.time = attemptWindowTimes[firstContributingAttempt(true)];
 		}
 		else if (detector_output.value.state!=false) {
 			detector_output.value = {state: false, elaboration: elaborationString};
 			detector_output.history = JSON.stringify([attemptWindow, skillLevelsAttempts, initTime, onboardSkills]);
-			detector_output.time = attemptWindowTimes[attemptWindow.findIndex((attempt) => attempt == 0)];
+			detector_output.time = attemptWindowTimes[firstContributingAttempt(false)];
 
 			mailer.postMessage(detector_output);
 			postMessage(detector_output);
@@ -281,6 +289,7 @@ self.onmessage = function ( e ) {
 			//initialize variables to your desired 'default' values
 			//
 			attemptWindow = Array.apply(null, Array(windowSize)).map(Number.prototype.valueOf,0);
+			attemptWindowTimes = Array.apply(null, Array(windowSize)).map(x => new Date(Date.now()));
 			skillLevelsAttempts = {};
 			onboardSkills = {};
 		}
@@ -292,6 +301,7 @@ self.onmessage = function ( e ) {
 			//
 			var all_history = JSON.parse(detector_output.history);
 			attemptWindow = all_history[0];
+			attemptWindowTimes = Array.apply(null, Array(windowSize)).map(x => new Date(Date.now()));
 			skillLevelsAttempts = all_history[1];
 			initTime = new Date(all_history[2]);
 			onboardSkills = all_history[3];

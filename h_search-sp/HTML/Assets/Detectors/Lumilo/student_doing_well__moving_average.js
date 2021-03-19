@@ -19,6 +19,7 @@ var mailer;
 //based on "remembered" values across problem boundaries, here
 // (initialize these at the bottom of this file, inside of self.onmessage)
 var attemptWindow;
+var attemptWindowTimes;
 
 //declare and/or initialize any other custom global variables for this detector here
 var attemptCorrect;
@@ -40,6 +41,17 @@ function is_first_attempt(e){
 		return true;
 	}
 
+}
+
+
+function firstContributingAttempt(state) {
+	let falseAttemptFn = (attemptCorrect) => attemptCorrect == 0;
+	let trueAttemptFn = (attemptCorrect) => attemptCorrect == 1;
+	if (state) {
+		return attemptWindow.findIndex(trueAttemptFn);
+	} else {
+		return attemptWindow.findIndex(falseAttemptFn);
+	}
 }
 
 function receive_transaction( e ){
@@ -67,7 +79,9 @@ function receive_transaction( e ){
 		//custom processing (insert code here)
 		attemptCorrect = (e.data.tutor_data.action_evaluation.toLowerCase() == "correct") ? 1 : 0;
 		attemptWindow.shift();
+		attemptWindowTimes.shift();
 		attemptWindow.push(attemptCorrect);
+		attemptWindowTimes.push(new Date(e.data.tutor_data.tutor_event_time));
 		detector_output.history = JSON.stringify(attemptWindow);
 
 		var sumCorrect = attemptWindow.reduce(function(pv, cv) { return pv + cv; }, 0);
@@ -85,6 +99,7 @@ function receive_transaction( e ){
 		if (detector_output.value.state != true && sumCorrect >= threshold){
 			detector_output.value.state = true;
 			detector_output.value.elaboration = "recently doing well";
+			detector_output.time = attemptWindowTimes[firstContributingAttempt(true)];
 			mailer.postMessage(detector_output);
 			postMessage(detector_output);
 			console.log("output_data = ", detector_output);
@@ -92,6 +107,7 @@ function receive_transaction( e ){
 		else if (detector_output.value.state != false) {
 			detector_output.value.state = false;
 			detector_output.value.elaboration = "";
+			detector_output.time = attemptWindowTimes[firstContributingAttempt(false)];
 			mailer.postMessage(detector_output);
 			postMessage(detector_output);
 			console.log("output_data = ", detector_output);
@@ -144,7 +160,7 @@ self.onmessage = function ( e ) {
 		else{
 			attemptWindow = JSON.parse(detector_output.history);
 		}
-
+		attemptWindowTimes = Array.apply(null, Array(windowSize)).map(x => new Date(Date.now()));
 		detector_output.time = new Date();
 		mailer.postMessage(detector_output);
 		postMessage(detector_output);

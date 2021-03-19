@@ -19,6 +19,7 @@ var mailer;
 //based on "remembered" values across problem boundaries, here
 // (initialize these at the bottom of this file, inside of self.onmessage)
 var attemptWindow;
+var attemptWindowTimes;
 var initTime;
 var lastTrigger;
 var intervalID;
@@ -55,6 +56,16 @@ var seedTime = 25;
 //###############################
 //###############################
 //
+
+function firstContributingAttempt(state) {
+	let falseAttemptFn = (numCorrect) => numCorrect == 0;
+	let trueAttemptFn = (numCorrect) => numCorrect == 1;
+	if (state) {
+		return attemptWindow.findIndex(trueAttemptFn);
+	} else {
+		return attemptWindow.findIndex(falseAttemptFn);
+	}
+}
 
 function clone(obj) {
     var copy;
@@ -418,7 +429,9 @@ function receive_transaction( e ){
 		console.log(isNotDeliberate);
 
 		attemptWindow.shift();
+		attemptWindowTimes.shift();
 		attemptWindow.push( (isGaming || isAbusingHints || isNotDeliberate) ? 1 : 0 );
+		attemptWindowTimes.push( new Date(e.data.tutor_data.tutor_event_time) );
 		var sumAskTeacherForHelp = attemptWindow.reduce(function(pv, cv) { return pv + cv; }, 0);
 		console.log(attemptWindow);
 
@@ -459,7 +472,7 @@ function receive_transaction( e ){
 			initTime = new Date();
 			detector_output.history = JSON.stringify([attemptWindow, initTime, lastTrigger, onboardSkills]);
 			detector_output.value = {state: true, elaboration: elaborationString};
-			detector_output.time = new Date();
+			detector_output.time = attemptWindowTimes[firstContributingAttempt(true)];
 
 			mailer.postMessage(detector_output);
 			postMessage(detector_output);
@@ -467,12 +480,12 @@ function receive_transaction( e ){
 		}
 		else if (detector_output.value.state==true && (sumAskTeacherForHelp >= threshold)){
 			detector_output.history = JSON.stringify([attemptWindow, initTime, lastTrigger, onboardSkills]);
-			detector_output.time = new Date();
+			detector_output.time = attemptWindowTimes[firstContributingAttempt(true)];
 		}
 		else if (detector_output.value.state!=false) {
 			detector_output.value = {state: false, elaboration: elaborationString};
 			detector_output.history = JSON.stringify([attemptWindow, initTime, lastTrigger, onboardSkills]);
-			detector_output.time = new Date();
+			detector_output.time = attemptWindowTimes[firstContributingAttempt(false)];
 
 			mailer.postMessage(detector_output);
 			postMessage(detector_output);
@@ -537,7 +550,7 @@ self.onmessage = function ( e ) {
 			lastTrigger = all_history[2];
 			onboardSkills = all_history[3];
 		}
-
+		attemptWindowTimes = Array.apply(null, Array(windowSize)).map(x => new Date(Date.now()));
 		detector_output.time = new Date();
 		mailer.postMessage(detector_output);
 		postMessage(detector_output);
