@@ -41,12 +41,18 @@ var wheelSpinningAttemptThreshold = 10; //following Beck and Gong's wheel-spinni
 var seedTime = 25;
 
 function firstContributingAttempt(state) {
+	let nonNullWindow = attemptWindow.filter((el, i) => attemptWindowTimes[i] != null);
+	let nonNullWindowTimes = attemptWindowTimes.filter((el) => el != null);
 	let falseAttemptFn = (attemptCorrect) => attemptCorrect == 0;
 	let trueAttemptFn = (attemptCorrect) => attemptCorrect == 1;
 	if (state) {
-		return attemptWindow.findIndex(trueAttemptFn);
+		let trueIndex = nonNullWindow.findIndex(trueAttemptFn);
+		return trueIndex < 0 ?
+					 new Date() : nonNullWindowTimes[trueIndex];
 	} else {
-		return attemptWindow.findIndex(falseAttemptFn);
+		let falseIndex = nonNullWindow.findIndex(falseAttemptFn);
+		return falseIndex < 0 ?
+					 new Date() : nonNullWindowTimes[falseIndex];
 	}
 }
 
@@ -225,7 +231,7 @@ function receive_transaction( e ){
 			initTime = new Date();
 			detector_output.history = JSON.stringify([attemptWindow, skillLevelsAttempts, initTime, onboardSkills]);
 			detector_output.value = {state: true, elaboration: elaborationString};
-			detector_output.time = attemptWindowTimes[firstContributingAttempt(true)];
+			detector_output.time = firstContributingAttempt(true);
 
 			mailer.postMessage(detector_output);
 			postMessage(detector_output);
@@ -233,12 +239,12 @@ function receive_transaction( e ){
 		}
 		else if (detector_output.value.state==true && (sumAskTeacherForHelp >= threshold)){
 			detector_output.history = JSON.stringify([attemptWindow, skillLevelsAttempts, initTime, onboardSkills]);
-			detector_output.time = attemptWindowTimes[firstContributingAttempt(true)];
+			detector_output.time = firstContributingAttempt(true);
 		}
 		else if (detector_output.value.state!=false) {
 			detector_output.value = {state: false, elaboration: elaborationString};
 			detector_output.history = JSON.stringify([attemptWindow, skillLevelsAttempts, initTime, onboardSkills]);
-			detector_output.time = attemptWindowTimes[firstContributingAttempt(false)];
+			detector_output.time = firstContributingAttempt(false);
 
 			mailer.postMessage(detector_output);
 			postMessage(detector_output);
@@ -249,13 +255,24 @@ function receive_transaction( e ){
 
 
 self.onmessage = function ( e ) {
-    console.log(variableName, " self.onmessage:", e, e.data, (e.data?e.data.commmand:null), (e.data?e.data.transaction:null), e.ports);
-    switch( e.data.command )
-    {
-    case "connectMailer":
+  console.log(variableName, " self.onmessage:", e, e.data, (e.data?e.data.commmand:null), (e.data?e.data.transaction:null), e.ports);
+  switch( e.data.command ) {
+	case "broadcast":
+		if (detector_output.value.state != false) {
+			detector_output.value = {state: false, elaboration: elaborationString};
+			detector_output.history = JSON.stringify([attemptWindow, skillLevelsAttempts, initTime, onboardSkills]);
+			detector_output.time = new Date(e.data.output.time);
+			mailer.postMessage(detector_output);
+			postMessage(detector_output);
+			console.log("output_data = ", detector_output);
+		}
+		// Don't want to return a time before idle period when detector next goes off
+		attemptWindowTimes = Array.apply(null, Array(windowSize));
+		break;
+  case "connectMailer":
 		mailer = e.ports[0];
 		mailer.onmessage = receive_transaction;
-	break;
+		break;
 	case "initialize":
 		for (initItem in e.data.initializer){
 			if (e.data.initializer[initItem].name == variableName){

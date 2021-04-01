@@ -61,7 +61,16 @@ TransactionMailerUsers.create = function(path, txDestURL, scriptsDestURL, authTo
 
         detector.postMessage({ command: "initialize", initializer: init });
                 console.log("TransactionMailerUsers.create(): sent command: initialize, init ", init );
-            
+
+        detector.onmessage = function (e) {
+            if (e.data.command == "broadcast") {
+                console.log("transaction_mailer_users received broadcast command");
+                for(var i = 0; i < TransactionMailerUsers.scripts.length; ++i) {
+                    TransactionMailerUsers.active[i].postMessage(e.data);
+                }
+            }
+        };
+
         TransactionMailerUsers.active.push(detector);
         console.log("TransactionMailerUsers.create(): s, active["+i+"]=", s, TransactionMailerUsers.active[i]);
     }
@@ -79,3 +88,4 @@ TransactionMailerUsers.sendTransaction = function(tx)
 	tmUsers[i].postMessage(tx);
     }
 };
+
