@@ -6,7 +6,7 @@ var variableName = "critical_struggle"
 //initializations (do not touch)
 var detector_output = {name: variableName,
 						category: "Dashboard", 
-						value: {state: false, elaboration: "", image: "HTML/Assets/images/unproductivestruggle-01.png"},
+						value: {state: "off", elaboration: "", image: "HTML/Assets/images/unproductivestruggle-01.png", suspended: 0},
 						history: "",
 						skill_names: "",
 						step_id: "",
@@ -26,6 +26,10 @@ var onboardSkills;
 var stepCounter = {};
 
 //declare and/or initialize any other custom global variables for this detector here...
+var firstSuspendedTimestamp;
+var lastSuspendedTimestamp;
+var suspendedDuration = 0;
+
 var initTime;
 var elaborationString = "";
 //
@@ -122,6 +126,23 @@ function clone(obj) {
     }
 
     throw new Error("Unable to copy obj! Its type isn't supported.");
+}
+
+function update_detector( state ) {
+	if (detector_output.value.state == "suspended") {
+		suspendedDuration += (new Date()).getTime() - lastSuspendedTimestamp;
+		detector_output.time = new Date(firstSuspendedTimestamp);
+	}
+	else {
+		suspendedDuration = 0;
+		detector_output.time = firstContributingAttempt(state);
+	}
+	detector_output.history = JSON.stringify([attemptWindow, skillLevelsAttempts, initTime, onboardSkills]);
+	detector_output.value = {state: state ? "on" : "off", elaboration: elaborationString, suspended: suspendedDuration};
+	
+	mailer.postMessage(detector_output);
+	postMessage(detector_output);
+	console.log("output_data = ", detector_output);
 }
 
 function receive_transaction( e ){
@@ -226,29 +247,11 @@ function receive_transaction( e ){
 			elaborationString = "";
 		}
 
-
-		if (detector_output.value.state!=true && (sumAskTeacherForHelp >= threshold)){
-			initTime = new Date();
-			detector_output.history = JSON.stringify([attemptWindow, skillLevelsAttempts, initTime, onboardSkills]);
-			detector_output.value = {state: true, elaboration: elaborationString};
-			detector_output.time = firstContributingAttempt(true);
-
-			mailer.postMessage(detector_output);
-			postMessage(detector_output);
-			console.log("output_data = ", detector_output);
-		}
-		else if (detector_output.value.state==true && (sumAskTeacherForHelp >= threshold)){
-			detector_output.history = JSON.stringify([attemptWindow, skillLevelsAttempts, initTime, onboardSkills]);
-			detector_output.time = firstContributingAttempt(true);
-		}
-		else if (detector_output.value.state!=false) {
-			detector_output.value = {state: false, elaboration: elaborationString};
-			detector_output.history = JSON.stringify([attemptWindow, skillLevelsAttempts, initTime, onboardSkills]);
-			detector_output.time = firstContributingAttempt(false);
-
-			mailer.postMessage(detector_output);
-			postMessage(detector_output);
-			console.log("output_data = ", detector_output);
+		if (detector_output.value.state!="on" && (sumAskTeacherForHelp >= threshold)) {
+			update_detector(true);
+		} 
+		else if (detector_output.value.state!="off" && !(sumAskTeacherForHelp >= threshold)) {
+			update_detector(false);
 		}
 	}
 }
@@ -258,16 +261,16 @@ self.onmessage = function ( e ) {
   console.log(variableName, " self.onmessage:", e, e.data, (e.data?e.data.commmand:null), (e.data?e.data.transaction:null), e.ports);
   switch( e.data.command ) {
 	case "broadcast":
-		if (detector_output.value.state != false) {
-			detector_output.value = {state: false, elaboration: elaborationString};
+		if (e.data.output.value.state == "on" && detector_output.value.state != "suspended") {
+			if (suspendedDuration == 0) firstSuspendedTimestamp = new Date(detector_output.time);
+			lastSuspendedTimestamp = new Date(e.data.output.time);
+			detector_output.value = {state: "suspended", elaboration: elaborationString};
 			detector_output.history = JSON.stringify([attemptWindow, skillLevelsAttempts, initTime, onboardSkills]);
-			detector_output.time = new Date(e.data.output.time);
+			detector_output.time = new Date();
 			mailer.postMessage(detector_output);
 			postMessage(detector_output);
 			console.log("output_data = ", detector_output);
 		}
-		// Don't want to return a time before idle period when detector next goes off
-		attemptWindowTimes = Array.apply(null, Array(windowSize));
 		break;
   case "connectMailer":
 		mailer = e.ports[0];
@@ -323,7 +326,7 @@ self.onmessage = function ( e ) {
 			initTime = new Date(all_history[2]);
 			onboardSkills = all_history[3];
 		}
-
+		suspendedDuration = 0;
 		detector_output.time = new Date();
 		mailer.postMessage(detector_output);
 		postMessage(detector_output);

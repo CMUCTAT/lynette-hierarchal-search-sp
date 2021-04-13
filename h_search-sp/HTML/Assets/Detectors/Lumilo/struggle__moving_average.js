@@ -6,7 +6,7 @@ var variableName = "struggle"
 //initializations (do not touch)
 var detector_output = {name: variableName,
 						category: "Dashboard", 
-						value: {state: false, elaboration: "", image: "HTML/Assets/images/struggle-01.png"},
+						value: {state: "off", elaboration: "", image: "HTML/Assets/images/struggle-01.png"},
 						history: "",
 						skill_names: "",
 						step_id: "",
@@ -26,6 +26,10 @@ var onboardSkills;
 var initTime;
 
 //declare and/or initialize any other custom global variables for this detector here
+var firstSuspendedTimestamp;
+var lastSuspendedTimestamp;
+var suspendedDuration = 0;
+
 var stepCounter = {};
 var help_model_output;
 var help_variables = {"lastAction": "null",
@@ -169,12 +173,15 @@ function senseOfWhatToDo(e){
 function firstContributingAttempt(state) {
 	let falseAttemptFn = (numCorrect) => numCorrect > 0;
 	let trueAttemptFn = (numCorrect) => numCorrect == 0;
-	let firstFalseAttempt = attemptWindow.findIndex(falseAttemptFn);
-	let firstTrueAttempt = attemptWindow.findIndex(trueAttemptFn);
 	if (state) {
-		return attemptWindow.findIndex(trueAttemptFn);
-	} else {
-		return attemptWindow.findIndex(falseAttemptFn);
+		let trueIndex = attemptWindow.findIndex(trueAttemptFn);
+		return trueIndex < 0 ?
+					 new Date() : attemptWindowTimes[trueIndex];
+	} 
+	else {
+		let falseIndex = attemptWindow.findIndex(falseAttemptFn);
+		return falseIndex < 0 ?
+					 new Date() : attemptWindowTimes[falseIndex];
 	}
 }
 
@@ -305,7 +312,22 @@ function clone(obj) {
 //###############################
 //###############################
 //
+function update_detector( state ) {
+	if (detector_output.value.state == "suspended") {
+		suspendedDuration += (new Date()).getTime() - lastSuspendedTimestamp;
+		detector_output.time = new Date(firstSuspendedTimestamp);
+	}
+	else {
+		suspendedDuration = 0;
+		detector_output.time = firstContributingAttempt(state);
+	}
+	detector_output.value = {state: state ? "on" : "off", elaboration: elaborationString, suspended: suspendedDuration};
+	detector_output.history = JSON.stringify([attemptWindow, initTime, onboardSkills]);
 
+	mailer.postMessage(detector_output);
+	postMessage(detector_output);
+	console.log("output_data = ", detector_output);
+}
 
 function receive_transaction( e ){
 	//e is the data of the transaction from mailer from transaction assembler
@@ -438,28 +460,11 @@ function receive_transaction( e ){
 		}
 
 
-		if (detector_output.value.state!=true && (sumCorrect <= threshold)){
-			initTime = new Date();
-			detector_output.history = JSON.stringify([attemptWindow, initTime, onboardSkills]);
-			detector_output.value = {state: true, elaboration: elaborationString};
-			detector_output.time = attemptWindowTimes[firstContributingAttempt(true)];
-
-			mailer.postMessage(detector_output);
-			postMessage(detector_output);
-			console.log("output_data = ", detector_output);
+		if (detector_output.value.state!="on" && (sumCorrect <= threshold)){
+			update_detector(true);
 		}
-		else if (detector_output.value.state==true && (sumCorrect <= threshold)){
-			detector_output.history = JSON.stringify([attemptWindow, initTime, onboardSkills]);
-			detector_output.time = attemptWindowTimes[firstContributingAttempt(true)];
-		}
-		else if (detector_output.value.state!=false) {
-			detector_output.value = {state: false, elaboration: elaborationString};
-			detector_output.history = JSON.stringify([attemptWindow, initTime, onboardSkills]);
-			detector_output.time = attemptWindowTimes[firstContributingAttempt(false)];
-
-			mailer.postMessage(detector_output);
-			postMessage(detector_output);
-			console.log("output_data = ", detector_output);
+		else if (detector_output.value.state!="off" && !(sumCorrect <= threshold)) {
+			update_detector(false);
 		}
 	}
 }
@@ -469,6 +474,19 @@ self.onmessage = function ( e ) {
     console.log(variableName, " self.onmessage:", e, e.data, (e.data?e.data.commmand:null), (e.data?e.data.transaction:null), e.ports);
     switch( e.data.command )
     {
+		case "broadcast":
+			if (e.data.output.value.state == "on" && detector_output.value.state != "suspended") {
+				if (suspendedDuration == 0) firstSuspendedTimestamp = new Date(detector_output.time);
+				lastSuspendedTimestamp = new Date(e.data.output.time);
+				detector_output.value = {state: "suspended", elaboration: elaborationString};
+				detector_output.history = JSON.stringify([attemptWindow, initTime, onboardSkills]);
+				detector_output.time = firstContributingAttempt(false);
+
+				mailer.postMessage(detector_output);
+				postMessage(detector_output);
+				console.log("output_data = ", detector_output);
+			}
+			break;
     case "connectMailer":
 		mailer = e.ports[0];
 		mailer.onmessage = receive_transaction;
@@ -495,7 +513,7 @@ self.onmessage = function ( e ) {
 
 		if (detectorForget){
 			detector_output.history = "";
-			detector_output.value = {state: null, elaboration: ""};
+			detector_output.value = {state: "off", elaboration: ""};
 		}
 
 
@@ -515,7 +533,7 @@ self.onmessage = function ( e ) {
 			initTime = new Date(all_history[1]);
 			onboardSkills = all_history[2];
 		}
-
+		suspendedDuration = 0;
 		detector_output.time = new Date();
 		mailer.postMessage(detector_output);
 		postMessage(detector_output);
