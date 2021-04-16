@@ -497,6 +497,12 @@ function receive_transaction( e ){
 		else if (detector_output.value.state!="off" && !(sumAskTeacherForHelp >= threshold)) {
 			update_detector(false);
 		}
+		else if (elaborationString != detector_output.value.elaboration) {
+			detector_output.value.elaboration = elaborationString;
+			mailer.postMessage(detector_output);
+			postMessage(detector_output);
+			console.log("output_data = ", detector_output);
+		}
 	}
 }
 
@@ -506,7 +512,8 @@ self.onmessage = function ( e ) {
     switch( e.data.command )
     {
 		case "broadcast":
-			if (e.data.output.value.state == "on" && detector_output.value.state != "suspended") {
+			if (e.data.output.value.state == "on" && detector_output.value.state != "suspended"
+					&& detector_output.value.state == "on") {
 				if (suspendedDuration == 0) firstSuspendedTimestamp = new Date(detector_output.time);
 				lastSuspendedTimestamp = new Date(e.data.output.time);
 				detector_output.value = {state: "suspended", elaboration: elaborationString};
