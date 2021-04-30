@@ -129,7 +129,7 @@ function clone(obj) {
 }
 
 function update_detector( state ) {
-	if (detector_output.value.state == "suspended") {
+	if (detector_output.value.state == "suspended" && state) {
 		suspendedDuration += (new Date()).getTime() - lastSuspendedTimestamp;
 		detector_output.time = new Date(firstSuspendedTimestamp);
 	}
@@ -138,7 +138,7 @@ function update_detector( state ) {
 		detector_output.time = firstContributingAttempt(state);
 	}
 	detector_output.history = JSON.stringify([attemptWindow, skillLevelsAttempts, initTime, onboardSkills]);
-	detector_output.value = {state: state ? "on" : "off", elaboration: elaborationString, suspended: suspendedDuration};
+	detector_output.value = {...detector_output.value, state: state ? "on" : "off", elaboration: elaborationString, suspended: suspendedDuration};
 	
 	mailer.postMessage(detector_output);
 	postMessage(detector_output);
@@ -271,7 +271,7 @@ self.onmessage = function ( e ) {
 				&& detector_output.value.state == "on") {
 			if (suspendedDuration == 0) firstSuspendedTimestamp = new Date(detector_output.time);
 			lastSuspendedTimestamp = new Date(e.data.output.time);
-			detector_output.value = {state: "suspended", elaboration: elaborationString};
+			detector_output.value = {...detector_output.value, state: "suspended", elaboration: elaborationString};
 			detector_output.history = JSON.stringify([attemptWindow, skillLevelsAttempts, initTime, onboardSkills]);
 			detector_output.time = new Date();
 			mailer.postMessage(detector_output);
@@ -303,7 +303,7 @@ self.onmessage = function ( e ) {
 
 		if (detectorForget){
 			detector_output.history = "";
-			detector_output.value = {state: null, elaboration: ""};
+			detector_output.value = {state: "off", elaboration: "", image: "HTML/Assets/images/unproductivestruggle-01.png", suspended: 0};
 		}
 
 

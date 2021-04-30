@@ -6,7 +6,7 @@ var variableName = "student_doing_well"
 //initializations (do not touch)
 var detector_output = {name: variableName,
 						category: "Dashboard", 
-						value: {state: "off", elaboration: "", image: "HTML/Assets/images/doingwell-01.png"},
+						value: {state: "off", elaboration: "", image: "HTML/Assets/images/doingwell-01.png", suspended: 0},
 						history: "",
 						skill_names: "",
 						step_id: "",
@@ -24,6 +24,9 @@ var attemptWindowTimes;
 var firstSuspendedTimestamp;
 var lastSuspendedTimestamp;
 var suspendedDuration = 0;
+
+var initTime;
+var elaborationString = "";
 
 //declare and/or initialize any other custom global variables for this detector here
 var attemptCorrect;
@@ -64,7 +67,7 @@ function firstContributingAttempt(state) {
 }
 
 function update_detector( state ) {
-	if (detector_output.value.state == "suspended") {
+	if (detector_output.value.state == "suspended" && state) {
 		suspendedDuration += (new Date()).getTime() - lastSuspendedTimestamp;
 		detector_output.time = new Date(firstSuspendedTimestamp);
 	}
@@ -72,7 +75,9 @@ function update_detector( state ) {
 		suspendedDuration = 0;
 		detector_output.time = firstContributingAttempt(state);
 	}
-	detector_output.value = {state: state ? "on" : "off", elaboration: "recently doing well", suspended: suspendedDuration};
+
+	elaborationString = state ? "recently doing well" : "";
+	detector_output.value = {...detector_output.value, state: state ? "on" : "off", elaboration: elaborationString, suspended: suspendedDuration};
 
 	mailer.postMessage(detector_output);
 	postMessage(detector_output);
@@ -130,7 +135,7 @@ function receive_transaction( e ) {
 		if (detector_output.value.state != "on" && sumCorrect >= threshold){
 			update_detector(true);
 		}
-		else if (detector_output.value.state != "on" && !(sumCorrect >= threshold)) {
+		else if (detector_output.value.state != "off" && !(sumCorrect >= threshold)) {
 			update_detector(false);
 		}
 		else if (elaborationString != detector_output.value.elaboration) {
@@ -152,7 +157,7 @@ self.onmessage = function ( e ) {
 					&& detector_output.value.state == "on") {
 				if (suspendedDuration == 0) firstSuspendedTimestamp = new Date(detector_output.time);
 				lastSuspendedTimestamp = new Date(e.data.output.time);
-				detector_output.value = {state: "suspended", elaboration: ""};
+				detector_output.value = {...detector_output.value, state: "suspended", elaboration: "", suspended: 0};
 				detector_output.time = firstContributingAttempt(false);
 
 				mailer.postMessage(detector_output);
@@ -186,7 +191,7 @@ self.onmessage = function ( e ) {
 
 		if (detectorForget){
 			detector_output.history = "";
-			detector_output.value = {state: "off", elaboration: ""};
+			detector_output.value = {state: "off", elaboration: "", image: "HTML/Assets/images/doingwell-01.png", suspended: 0};
 		}
 
 
