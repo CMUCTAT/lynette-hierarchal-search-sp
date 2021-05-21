@@ -6,7 +6,7 @@ var variableName = "student_doing_well"
 //initializations (do not touch)
 var detector_output = {name: variableName,
 						category: "Dashboard", 
-						value: {state: "off", elaboration: "", image: "HTML/Assets/images/doingwell-01.png", suspended: 0},
+						value: {state: "off", elaboration: "", image: "HTML/Assets/images/student_doing_well.svg", suspended: 0},
 						history: "",
 						skill_names: "",
 						step_id: "",
@@ -25,6 +25,7 @@ var firstSuspendedTimestamp;
 var lastSuspendedTimestamp;
 var suspendedDuration = 0;
 
+var isFirstAttempt = true;
 var initTime;
 var elaborationString = "";
 
@@ -67,17 +68,23 @@ function firstContributingAttempt(state) {
 }
 
 function update_detector( state ) {
+	let updateTime = new Date(firstSuspendedTimestamp);
 	if (detector_output.value.state == "suspended" && state) {
 		suspendedDuration += (new Date()).getTime() - lastSuspendedTimestamp;
-		detector_output.time = new Date(firstSuspendedTimestamp);
+		updateTime = new Date(firstSuspendedTimestamp);
 	}
 	else {
 		suspendedDuration = 0;
-		detector_output.time = firstContributingAttempt(state);
+		updateTime = firstContributingAttempt(state);
 	}
 
 	elaborationString = state ? "recently doing well" : "";
-	detector_output.value = {...detector_output.value, state: state ? "on" : "off", elaboration: elaborationString, suspended: suspendedDuration};
+	detector_output = {...detector_output,
+										value: {...detector_output.value, 
+														state: state ? "on" : "off", 
+														elaboration: elaborationString, 
+														suspended: suspendedDuration},
+										time: updatetime};
 
 	mailer.postMessage(detector_output);
 	postMessage(detector_output);
@@ -86,6 +93,26 @@ function update_detector( state ) {
 
 function receive_transaction( e ) {
 	//e is the data of the transaction from mailer from transaction assembler
+	if(e.data.tool_data.action == "UpdateVariable") {
+		console.log("Received update variable transaction in student doing well");
+		let broadcastedVar = JSON.parse(e.data.tool_data.input);
+		if (broadcastedVar.value.state == "on" && detector_output.value.state != "suspended"
+					&& detector_output.value.state == "on") {
+				if (suspendedDuration == 0) firstSuspendedTimestamp = new Date(detector_output.time);
+				lastSuspendedTimestamp = new Date(broadcastedVar.time);
+				detector_output = {...detector_output,
+													value: {...detector_output.value, 
+																	state: "suspended", 
+																	elaboration: "", 
+																	suspended: 0},
+													time: firstContributingAttempt(false)};
+
+				mailer.postMessage(detector_output);
+				postMessage(detector_output);
+				console.log("output_data = ", detector_output);
+			} 
+	}
+
 	if(e.data.actor == 'student'  && e.data.tool_data.selection !="done" && e.data.tool_data.action != "UpdateVariable"){
 		isFirstAttempt = is_first_attempt(e);
 		//exit suspended status
@@ -138,8 +165,8 @@ function receive_transaction( e ) {
 		else if (detector_output.value.state != "off" && !(sumCorrect >= threshold)) {
 			update_detector(false);
 		}
-		else if (elaborationString != detector_output.value.elaboration) {
-			detector_output.value.elaboration = elaborationString;
+		else if (detector_output.value.state=="on" && elaborationString != detector_output.value.elaboration) {
+			detector_output = {...detector_output, value: {...detector_output.value, elaboration: elaborationString}};
 			mailer.postMessage(detector_output);
 			postMessage(detector_output);
 			console.log("output_data = ", detector_output);
@@ -152,19 +179,6 @@ self.onmessage = function ( e ) {
     console.log(variableName, " self.onmessage:", e, e.data, (e.data?e.data.commmand:null), (e.data?e.data.transaction:null), e.ports);
     switch( e.data.command )
     {
-		case "broadcast":
-			if (e.data.output.value.state == "on" && detector_output.value.state != "suspended"
-					&& detector_output.value.state == "on") {
-				if (suspendedDuration == 0) firstSuspendedTimestamp = new Date(detector_output.time);
-				lastSuspendedTimestamp = new Date(e.data.output.time);
-				detector_output.value = {...detector_output.value, state: "suspended", elaboration: "", suspended: 0};
-				detector_output.time = firstContributingAttempt(false);
-
-				mailer.postMessage(detector_output);
-				postMessage(detector_output);
-				console.log("output_data = ", detector_output);
-			} 
-			break;
     case "connectMailer":
 		mailer = e.ports[0];
 		mailer.onmessage = receive_transaction;
@@ -190,8 +204,12 @@ self.onmessage = function ( e ) {
 		//
 
 		if (detectorForget){
-			detector_output.history = "";
-			detector_output.value = {state: "off", elaboration: "", image: "HTML/Assets/images/doingwell-01.png", suspended: 0};
+			detector_output = {...detector_output,
+												value: {state: "off", 
+																elaboration: "", 
+																image: "HTML/Assets/images/student_doing_well.svg", 
+																suspended: 0},
+												history: ""};
 		}
 
 

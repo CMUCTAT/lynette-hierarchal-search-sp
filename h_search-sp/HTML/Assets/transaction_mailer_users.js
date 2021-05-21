@@ -62,9 +62,9 @@ TransactionMailerUsers.create = function(path, txDestURL, scriptsDestURL, authTo
         detector.onmessage = function (e) {
             if (e.data.command == "broadcast") {
                 console.log("transaction_mailer_users received broadcast command");
-                for(var i = 0; i < TransactionMailerUsers.scripts.length; ++i) {
-                    TransactionMailerUsers.active[i].postMessage(e.data);
-                }
+                CTATCommShell.commShell.processComponentAction(
+                    new CTATSAI(e.data.output.name, "UpdateVariable", JSON.stringify(e.data.output)), false, true, null, "ATTEMPT", "DATA"
+                );
             }
         };
 

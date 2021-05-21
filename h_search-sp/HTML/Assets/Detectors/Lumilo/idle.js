@@ -6,7 +6,7 @@ var variableName = "idle"
 //initializations (do not touch)
 var detector_output = {name: variableName,
 						category: "Dashboard", 
-						value: {state: "off", elaboration: "", image: "HTML/Assets/images/idle-01.png"},
+						value: {state: "off", elaboration: "", image: "HTML/Assets/images/idle.svg"},
 						history: "",
 						skill_names: "",
 						step_id: "",
@@ -81,7 +81,7 @@ function receive_transaction( e ){
 	   //    60000)
 		timerId4 = setTimeout(function() { 
 			detector_output.history = e.data.tool_data.tool_event_time;
-			detector_output.value = {state: "on", elaboration: ""};
+			detector_output.value = {...detector_output.value, state: "on", elaboration: ""};
 			twoMinutes = 2 * 60 * 1000;
 			detector_output.time = new Date(new Date() - twoMinutes);
 			mailer.postMessage(detector_output);
@@ -124,7 +124,7 @@ self.onmessage = function ( e ) {
 
 		if (detectorForget){
 			detector_output.history = "onLoad";
-			detector_output.value = {state: "off", elaboration: ""};
+			detector_output.value = {state: "off", elaboration: "", image: "HTML/Assets/images/idle.svg"};
 		}
 
 
@@ -144,7 +144,7 @@ self.onmessage = function ( e ) {
 	   //    60000)
 		timerId4 = setTimeout(function() { 
 			detector_output.history = "onLoad";
-			detector_output.value = {state: "on", elaboration: ""};
+			detector_output.value = {...detector_output.value, state: "on", elaboration: ""};
 			twoMinutes = 2 * 60 * 1000;
 			detector_output.time = new Date(new Date() - twoMinutes);
 			mailer.postMessage(detector_output);
