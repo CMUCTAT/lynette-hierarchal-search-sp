@@ -60,12 +60,10 @@ TransactionMailerUsers.create = function(path, txDestURL, scriptsDestURL, authTo
                 console.log("TransactionMailerUsers.create(): sent command: initialize, init ", init );
 
         detector.onmessage = function (e) {
-            if (e.data.command == "broadcast") {
-                console.log("transaction_mailer_users received broadcast command");
-                CTATCommShell.commShell.processComponentAction(
-                    new CTATSAI(e.data.output.name, "UpdateVariable", JSON.stringify(e.data.output)), false, true, null, "ATTEMPT", "DATA"
-                );
-            }
+            console.log("transaction_mailer_users received broadcast command");
+            CTATCommShell.commShell.processComponentAction(
+                new CTATSAI(e.data.name, "UpdateVariable", JSON.stringify(e.data)), false, true, null, "ATTEMPT", "DATA"
+            );
         };
 
         TransactionMailerUsers.active.push(detector);

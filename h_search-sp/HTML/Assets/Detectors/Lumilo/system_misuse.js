@@ -384,7 +384,8 @@ function receive_transaction( e ){
 	if(e.data.tool_data.action == "UpdateVariable") {
 		console.log("Received update variable transaction in system misuse");
 		let broadcastedVar = JSON.parse(e.data.tool_data.input);
-		if (broadcastedVar.value.state == "on" && detector_output.value.state != "suspended"
+		let selection = e.data.tool_data.selection;
+		if (selection == "idle" && broadcastedVar.value.state == "on" && detector_output.value.state != "suspended"
 				&& detector_output.value.state == "on") {
 			if (suspendedDuration == 0) firstSuspendedTimestamp = new Date(detector_output.time);
 			lastSuspendedTimestamp = new Date(broadcastedVar.time);

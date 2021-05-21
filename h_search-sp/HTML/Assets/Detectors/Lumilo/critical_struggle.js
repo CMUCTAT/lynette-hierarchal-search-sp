@@ -156,11 +156,11 @@ function receive_transaction( e ){
 	//set conditions under which transaction should be processed 
 	//(i.e., to update internal state and history, without 
 	//necessarily updating external state and history)
-	console.log(e.data);
 	if(e.data.tool_data.action == "UpdateVariable") {
 		console.log("Received update variable transaction in critical struggle");
 		let broadcastedVar = JSON.parse(e.data.tool_data.input);
-		if (broadcastedVar.value.state == "on" && broadcastedVar.value.state != "suspended"
+		let selection = e.data.tool_data.selection;
+		if (selection == "idle" && broadcastedVar.value.state == "on" && broadcastedVar.value.state != "suspended"
 			&& detector_output.value.state == "on") {
 			if (suspendedDuration == 0) firstSuspendedTimestamp = new Date(detector_output.time);
 			lastSuspendedTimestamp = new Date(broadcastedVar.time);

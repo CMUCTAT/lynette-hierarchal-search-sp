@@ -86,7 +86,6 @@ function receive_transaction( e ){
 			detector_output.time = new Date(new Date() - twoMinutes);
 			mailer.postMessage(detector_output);
 			postMessage(detector_output);
-			postMessage({ command: "broadcast", output: detector_output });
 			console.log("idle sending out broadcast command");
 			console.log("output_data = ", detector_output);  
 		}, 120000);
